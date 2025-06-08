@@ -1,28 +1,61 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Edit, LogOut, Gift, Settings } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { User, Edit, LogOut, Gift, Settings, Coins } from 'lucide-react';
 
 const ProfilePage = () => {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, profile, logout, updateProfile } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
-  const [displayName, setDisplayName] = useState(user?.displayName || '');
-  const [bio, setBio] = useState(user?.bio || '');
+  const [displayName, setDisplayName] = useState('');
+  const [bio, setBio] = useState('');
+  const [receivedGifts, setReceivedGifts] = useState<any[]>([]);
 
-  const handleSave = () => {
-    updateProfile({ displayName, bio });
+  useEffect(() => {
+    if (profile) {
+      setDisplayName(profile.display_name);
+      setBio(profile.bio);
+      fetchReceivedGifts();
+    }
+  }, [profile]);
+
+  const fetchReceivedGifts = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('gifts')
+        .select(`
+          *,
+          sender:sender_id(display_name)
+        `)
+        .eq('receiver_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+      if (error) throw error;
+      setReceivedGifts(data || []);
+    } catch (error) {
+      console.error('Error fetching gifts:', error);
+    }
+  };
+
+  const handleSave = async () => {
+    await updateProfile({ display_name: displayName, bio });
     setIsEditing(false);
   };
 
-  const receivedGifts = [
-    { emoji: '💐', from: 'Alice', message: 'Thank you!', count: 3 },
-    { emoji: '🌹', from: 'Bob', message: 'You\'re amazing!', count: 2 },
-    { emoji: '🧸', from: 'Charlie', message: 'Hope you like this!', count: 1 },
-  ];
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -32,8 +65,12 @@ const ProfilePage = () => {
           <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center">
             <User className="w-10 h-10" />
           </div>
-          <h1 className="text-xl font-bold">{user?.displayName}</h1>
-          <p className="text-purple-100">#{user?.userNumber}</p>
+          <h1 className="text-xl font-bold">{profile.display_name}</h1>
+          <p className="text-purple-100">#{profile.user_number}</p>
+          <div className="flex items-center justify-center mt-2">
+            <Coins className="w-4 h-4 mr-1" />
+            <span className="font-medium">{profile.coin_balance} Coins</span>
+          </div>
         </div>
       </div>
 
@@ -85,22 +122,22 @@ const ProfilePage = () => {
               <div className="space-y-3">
                 <div>
                   <p className="text-sm text-gray-600">Display Name</p>
-                  <p className="font-medium">{user?.displayName}</p>
+                  <p className="font-medium">{profile.display_name}</p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-gray-600">Email</p>
-                  <p className="font-medium">{user?.email}</p>
+                  <p className="font-medium">{profile.email}</p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-gray-600">User Number</p>
-                  <p className="font-medium">#{user?.userNumber}</p>
+                  <p className="font-medium">#{profile.user_number}</p>
                 </div>
                 
                 <div>
                   <p className="text-sm text-gray-600">Bio</p>
-                  <p className="font-medium">{user?.bio}</p>
+                  <p className="font-medium">{profile.bio}</p>
                 </div>
               </div>
             )}
@@ -116,15 +153,19 @@ const ProfilePage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-4">
-              {receivedGifts.map((gift, index) => (
-                <div key={index} className="text-center p-3 bg-gray-50 rounded-lg">
-                  <div className="text-2xl mb-1">{gift.emoji}</div>
-                  <p className="text-xs text-gray-600">x{gift.count}</p>
-                  <p className="text-xs text-gray-500 mt-1">From {gift.from}</p>
-                </div>
-              ))}
-            </div>
+            {receivedGifts.length > 0 ? (
+              <div className="grid grid-cols-3 gap-4">
+                {receivedGifts.map((gift) => (
+                  <div key={gift.id} className="text-center p-3 bg-gray-50 rounded-lg">
+                    <div className="text-2xl mb-1">{gift.gift_emoji}</div>
+                    <p className="text-xs text-gray-600">{gift.gift_name}</p>
+                    <p className="text-xs text-gray-500 mt-1">From {gift.sender?.display_name}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-center py-4">No gifts received yet</p>
+            )}
           </CardContent>
         </Card>
 

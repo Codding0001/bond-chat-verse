@@ -1,24 +1,30 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { User, Session } from '@supabase/supabase-js';
+import { useToast } from '@/hooks/use-toast';
 
-interface User {
+interface Profile {
   id: string;
   email: string;
-  displayName: string;
-  userNumber: string; // 6-digit unique number
+  display_name: string;
+  user_number: string;
   bio: string;
-  profilePicture: string;
-  coinBalance: number;
-  isOnline: boolean;
+  profile_picture: string;
+  coin_balance: number;
+  is_online: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
+  profile: Profile | null;
+  session: Session | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
-  logout: () => void;
-  updateProfile: (updates: Partial<User>) => void;
-  updateCoins: (amount: number) => void;
+  logout: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
+  updateCoins: (amount: number) => Promise<void>;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,80 +39,195 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Generate random 6-digit user number
-  const generateUserNumber = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  };
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-  const login = async (email: string, password: string) => {
-    // Simulate API call
-    const mockUser: User = {
-      id: '1',
-      email,
-      displayName: 'John Doe',
-      userNumber: '123456',
-      bio: 'Hello there! I am using ChatApp.',
-      profilePicture: '',
-      coinBalance: 100,
-      isOnline: true,
-    };
-    setUser(mockUser);
-    localStorage.setItem('user', JSON.stringify(mockUser));
-  };
-
-  const register = async (email: string, password: string, displayName: string) => {
-    // Simulate API call
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      displayName,
-      userNumber: generateUserNumber(),
-      bio: 'Hello there! I am using ChatApp.',
-      profilePicture: '',
-      coinBalance: 50, // Starting coins
-      isOnline: true,
-    };
-    setUser(newUser);
-    localStorage.setItem('user', JSON.stringify(newUser));
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-  };
-
-  const updateProfile = (updates: Partial<User>) => {
-    if (user) {
-      const updatedUser = { ...user, ...updates };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      if (error) throw error;
+      setProfile(data);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
     }
   };
 
-  const updateCoins = (amount: number) => {
-    if (user) {
-      const updatedUser = { ...user, coinBalance: user.coinBalance + amount };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+  const login = async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Welcome back!",
+        description: "You have successfully signed in.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Login failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const register = async (email: string, password: string, displayName: string) => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            display_name: displayName,
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Account created!",
+        description: "Welcome to ChatApp! You can now start chatting.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Registration failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+
+      toast({
+        title: "Signed out",
+        description: "You have been successfully signed out.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error signing out",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateProfile = async (updates: Partial<Profile>) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile(prev => prev ? { ...prev, ...updates } : null);
+
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been successfully updated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateCoins = async (amount: number) => {
+    if (!user || !profile) return;
+
+    try {
+      const newBalance = profile.coin_balance + amount;
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ coin_balance: newBalance })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile(prev => prev ? { ...prev, coin_balance: newBalance } : null);
+    } catch (error: any) {
+      toast({
+        title: "Transaction failed",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event);
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          // Defer profile fetching to prevent deadlocks
+          setTimeout(() => {
+            fetchProfile(session.user.id);
+          }, 0);
+        } else {
+          setProfile(null);
+        }
+        
+        setLoading(false);
+      }
+    );
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      }
+      
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   return (
     <AuthContext.Provider value={{
       user,
+      profile,
+      session,
       login,
       register,
       logout,
       updateProfile,
-      updateCoins
+      updateCoins,
+      loading
     }}>
       {children}
     </AuthContext.Provider>
