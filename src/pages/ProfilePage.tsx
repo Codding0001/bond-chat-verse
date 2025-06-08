@@ -7,9 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Edit, LogOut, Gift, Settings, Coins } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const ProfilePage = () => {
   const { user, profile, logout, updateProfile } = useAuth();
+  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -179,6 +181,14 @@ const ProfilePage = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
+              <button 
+                className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between"
+                onClick={() => navigate('/settings')}
+              >
+                <span>App Settings</span>
+                <span className="text-gray-400">›</span>
+              </button>
+              
               <button className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between">
                 <span>Privacy Settings</span>
                 <span className="text-gray-400">›</span>
@@ -186,11 +196,6 @@ const ProfilePage = () => {
               
               <button className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between">
                 <span>Notification Preferences</span>
-                <span className="text-gray-400">›</span>
-              </button>
-              
-              <button className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between">
-                <span>Story Settings</span>
                 <span className="text-gray-400">›</span>
               </button>
             </div>

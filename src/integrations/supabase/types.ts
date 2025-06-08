@@ -14,18 +14,24 @@ export type Database = {
           chat_id: string | null
           id: string
           joined_at: string | null
+          last_read_at: string | null
+          unread_count: number | null
           user_id: string | null
         }
         Insert: {
           chat_id?: string | null
           id?: string
           joined_at?: string | null
+          last_read_at?: string | null
+          unread_count?: number | null
           user_id?: string | null
         }
         Update: {
           chat_id?: string | null
           id?: string
           joined_at?: string | null
+          last_read_at?: string | null
+          unread_count?: number | null
           user_id?: string | null
         }
         Relationships: [
@@ -252,6 +258,44 @@ export type Database = {
             foreignKeyName: "transactions_to_user_id_fkey"
             columns: ["to_user_id"]
             isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_settings: {
+        Row: {
+          chat_wallpaper_color: string | null
+          created_at: string | null
+          id: string
+          notification_sound: boolean | null
+          theme: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          chat_wallpaper_color?: string | null
+          created_at?: string | null
+          id?: string
+          notification_sound?: boolean | null
+          theme?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          chat_wallpaper_color?: string | null
+          created_at?: string | null
+          id?: string
+          notification_sound?: boolean | null
+          theme?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
