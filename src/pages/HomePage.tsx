@@ -6,7 +6,7 @@ import { MessageSquare, Users, Gift, Wallet, Phone, Camera } from 'lucide-react'
 import { useNavigate } from 'react-router-dom';
 
 const HomePage = () => {
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const navigate = useNavigate();
 
   const quickActions = [
@@ -17,9 +17,17 @@ const HomePage = () => {
   ];
 
   const stats = [
-    { label: 'Coin Balance', value: user?.coinBalance || 0, icon: Wallet },
-    { label: 'User Number', value: `#${user?.userNumber}`, icon: Users },
+    { label: 'Coin Balance', value: profile?.coin_balance || 0, icon: Wallet },
+    { label: 'User Number', value: `#${profile?.user_number}`, icon: Users },
   ];
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -28,12 +36,12 @@ const HomePage = () => {
         <div className="flex items-center space-x-4">
           <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
             <span className="text-lg font-bold">
-              {user?.displayName.charAt(0).toUpperCase()}
+              {profile.display_name.charAt(0).toUpperCase()}
             </span>
           </div>
           <div>
-            <h1 className="text-xl font-bold">Welcome back, {user?.displayName}!</h1>
-            <p className="text-blue-100">#{user?.userNumber}</p>
+            <h1 className="text-xl font-bold">Welcome back, {profile.display_name}!</h1>
+            <p className="text-blue-100">#{profile.user_number}</p>
           </div>
         </div>
       </div>
