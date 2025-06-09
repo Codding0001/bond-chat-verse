@@ -16,6 +16,9 @@ import GiftsPage from "./pages/GiftsPage";
 import WalletPage from "./pages/WalletPage";
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
+import ReportUserPage from "./pages/ReportUserPage";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
+import BanAppealPage from "./pages/BanAppealPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +43,9 @@ const App = () => (
                   <Route path="/wallet" element={<WalletPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/report-user" element={<ReportUserPage />} />
+                  <Route path="/admin" element={<AdminDashboardPage />} />
+                  <Route path="/ban-appeal" element={<BanAppealPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
                 <BottomNavigation />

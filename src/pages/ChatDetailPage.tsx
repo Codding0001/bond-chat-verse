@@ -160,11 +160,26 @@ const ChatDetailPage = () => {
       if (error) throw error;
 
       // Update unread count for other members
-      await supabase
+      const { data: otherMembers } = await supabase
         .from('chat_members')
-        .update({ unread_count: supabase.sql`unread_count + 1` })
+        .select('user_id')
         .eq('chat_id', chatId)
         .neq('user_id', user.id);
+
+      if (otherMembers) {
+        for (const member of otherMembers) {
+          await supabase
+            .from('chat_members')
+            .update({ unread_count: (await supabase
+              .from('chat_members')
+              .select('unread_count')
+              .eq('chat_id', chatId)
+              .eq('user_id', member.user_id)
+              .single()).data?.unread_count || 0 + 1 })
+            .eq('chat_id', chatId)
+            .eq('user_id', member.user_id);
+        }
+      }
 
       setNewMessage('');
     } catch (error) {
@@ -209,11 +224,10 @@ const ChatDetailPage = () => {
       await updateCoins(-amount);
 
       // Add coins to receiver
-      await supabase.sql`
-        UPDATE profiles 
-        SET coin_balance = coin_balance + ${amount}
-        WHERE id = ${otherMember.user_id}
-      `;
+      await supabase
+        .from('profiles')
+        .update({ coin_balance: supabase.sql`coin_balance + ${amount}` })
+        .eq('id', otherMember.user_id);
 
       // Record transaction
       await supabase

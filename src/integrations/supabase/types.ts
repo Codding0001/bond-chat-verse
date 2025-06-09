@@ -9,6 +9,64 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      ban_appeals: {
+        Row: {
+          admin_response: string | null
+          appeal_reason: string
+          ban_id: string | null
+          created_at: string | null
+          id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          admin_response?: string | null
+          appeal_reason: string
+          ban_id?: string | null
+          created_at?: string | null
+          id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          admin_response?: string | null
+          appeal_reason?: string
+          ban_id?: string | null
+          created_at?: string | null
+          id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ban_appeals_ban_id_fkey"
+            columns: ["ban_id"]
+            isOneToOne: false
+            referencedRelation: "user_bans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ban_appeals_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ban_appeals_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_members: {
         Row: {
           chat_id: string | null
@@ -187,6 +245,7 @@ export type Database = {
           display_name: string
           email: string
           id: string
+          is_admin: boolean | null
           is_online: boolean | null
           profile_picture: string | null
           updated_at: string | null
@@ -199,6 +258,7 @@ export type Database = {
           display_name: string
           email: string
           id: string
+          is_admin?: boolean | null
           is_online?: boolean | null
           profile_picture?: string | null
           updated_at?: string | null
@@ -211,6 +271,7 @@ export type Database = {
           display_name?: string
           email?: string
           id?: string
+          is_admin?: boolean | null
           is_online?: boolean | null
           profile_picture?: string | null
           updated_at?: string | null
@@ -263,6 +324,118 @@ export type Database = {
           },
         ]
       }
+      user_bans: {
+        Row: {
+          ban_end: string | null
+          ban_start: string | null
+          ban_type: string
+          banned_by: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          reason: string
+          user_id: string | null
+        }
+        Insert: {
+          ban_end?: string | null
+          ban_start?: string | null
+          ban_type: string
+          banned_by?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          reason: string
+          user_id?: string | null
+        }
+        Update: {
+          ban_end?: string | null
+          ban_start?: string | null
+          ban_type?: string
+          banned_by?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          reason?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_bans_banned_by_fkey"
+            columns: ["banned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_bans_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_reports: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          evidence_screenshot: string | null
+          id: string
+          reason: string
+          reported_user_id: string | null
+          reporter_id: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          evidence_screenshot?: string | null
+          id?: string
+          reason: string
+          reported_user_id?: string | null
+          reporter_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          evidence_screenshot?: string | null
+          id?: string
+          reason?: string
+          reported_user_id?: string | null
+          reporter_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_reports_reported_user_id_fkey"
+            columns: ["reported_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_reports_reporter_id_fkey"
+            columns: ["reporter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_reports_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_settings: {
         Row: {
           chat_wallpaper_color: string | null
@@ -309,6 +482,10 @@ export type Database = {
       generate_user_number: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      is_user_banned: {
+        Args: { user_id_param: string }
+        Returns: boolean
       }
     }
     Enums: {
