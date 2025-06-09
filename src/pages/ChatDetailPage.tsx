@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSettings } from '@/contexts/SettingsContext';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '../contexts/AuthContext';
-import { useSettings } from '../contexts/SettingsContext';
-import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Send, DollarSign, Settings } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { Card, CardContent } from '@/components/ui/card';
+import { ArrowLeft, Send, DollarSign } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -16,87 +16,75 @@ interface Message {
   sender_id: string;
   created_at: string;
   message_type: string;
-  sender?: {
+}
+
+interface ChatMember {
+  user_id: string;
+  profiles: {
     display_name: string;
     user_number: string;
   };
 }
 
-interface Chat {
-  id: string;
-  name: string;
-  is_group: boolean;
-}
-
 const ChatDetailPage = () => {
   const { chatId } = useParams();
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, profile, updateCoins } = useAuth();
   const { settings, playNotificationSound } = useSettings();
   const { toast } = useToast();
-  
-  const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [chatMembers, setChatMembers] = useState<ChatMember[]>([]);
+  const [showTipModal, setShowTipModal] = useState(false);
   const [tipAmount, setTipAmount] = useState('');
-  const [showTipInput, setShowTipInput] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  useEffect(() => {
+    if (chatId) {
+      fetchMessages();
+      fetchChatMembers();
+      markMessagesAsRead();
+    }
+  }, [chatId]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
   useEffect(() => {
-    if (chatId && user) {
-      fetchChat();
-      fetchMessages();
-      markMessagesAsRead();
-      
-      // Set up real-time message listener
-      const channel = supabase
-        .channel(`chat-${chatId}`)
-        .on('postgres_changes', {
+    if (!chatId) return;
+
+    const channel = supabase
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `chat_id=eq.${chatId}`
-        }, (payload) => {
+          filter: `chat_id=eq.${chatId}`,
+        },
+        (payload) => {
           const newMessage = payload.new as Message;
-          if (newMessage.sender_id !== user.id) {
+          setMessages(prev => [...prev, newMessage]);
+          
+          // Play sound if message is from another user
+          if (newMessage.sender_id !== user?.id) {
             playNotificationSound();
           }
-          fetchMessages();
-        })
-        .subscribe();
+        }
+      )
+      .subscribe();
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [chatId, user]);
-
-  const fetchChat = async () => {
-    if (!chatId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chatId)
-        .single();
-
-      if (error) throw error;
-      setChat(data);
-    } catch (error) {
-      console.error('Error fetching chat:', error);
-      navigate('/chats');
-    }
-  };
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [chatId, user?.id, playNotificationSound]);
 
   const fetchMessages = async () => {
     if (!chatId) return;
@@ -104,10 +92,7 @@ const ChatDetailPage = () => {
     try {
       const { data, error } = await supabase
         .from('messages')
-        .select(`
-          *,
-          sender:sender_id(display_name, user_number)
-        `)
+        .select('*')
         .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
 
@@ -117,6 +102,28 @@ const ChatDetailPage = () => {
       console.error('Error fetching messages:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchChatMembers = async () => {
+    if (!chatId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('chat_members')
+        .select(`
+          user_id,
+          profiles (
+            display_name,
+            user_number
+          )
+        `)
+        .eq('chat_id', chatId);
+
+      if (error) throw error;
+      setChatMembers(data || []);
+    } catch (error) {
+      console.error('Error fetching chat members:', error);
     }
   };
 
@@ -144,15 +151,14 @@ const ChatDetailPage = () => {
       const { error } = await supabase
         .from('messages')
         .insert({
-          chat_id: chatId,
-          sender_id: user.id,
           content: newMessage,
+          sender_id: user.id,
+          chat_id: chatId,
           message_type: 'text'
         });
 
       if (error) throw error;
-      setNewMessage('');
-      
+
       // Update unread count for other members
       await supabase
         .from('chat_members')
@@ -160,106 +166,86 @@ const ChatDetailPage = () => {
         .eq('chat_id', chatId)
         .neq('user_id', user.id);
 
-    } catch (error: any) {
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
       toast({
-        title: "Failed to send message",
-        description: error.message,
+        title: "Error",
+        description: "Failed to send message",
         variant: "destructive",
       });
     }
   };
 
   const sendTip = async () => {
-    if (!tipAmount || !chatId || !user || !profile) return;
-
     const amount = parseInt(tipAmount);
-    if (amount <= 0 || amount > profile.coin_balance) {
+    if (!amount || amount <= 0 || !chatId || !user || !profile) return;
+
+    if (profile.coin_balance < amount) {
       toast({
-        title: "Invalid amount",
-        description: "Please enter a valid amount",
+        title: "Insufficient coins",
+        description: "You don't have enough coins for this tip",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      // Get other chat members to tip
-      const { data: members, error: membersError } = await supabase
-        .from('chat_members')
-        .select('user_id')
-        .eq('chat_id', chatId)
-        .neq('user_id', user.id);
+      // Get other chat member
+      const otherMember = chatMembers.find(m => m.user_id !== user.id);
+      if (!otherMember) return;
 
-      if (membersError || !members || members.length === 0) {
-        toast({
-          title: "No recipients",
-          description: "No one to tip in this chat",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const tipPerPerson = Math.floor(amount / members.length);
-      
       // Send tip message
       await supabase
         .from('messages')
         .insert({
-          chat_id: chatId,
+          content: `💰 Sent ${amount} coins as a tip!`,
           sender_id: user.id,
-          content: `💰 Tipped ${tipPerPerson} coins to everyone!`,
+          chat_id: chatId,
           message_type: 'tip'
         });
 
-      // Update sender balance
+      // Update coin balances
+      await updateCoins(-amount);
+
+      // Add coins to receiver
+      await supabase.sql`
+        UPDATE profiles 
+        SET coin_balance = coin_balance + ${amount}
+        WHERE id = ${otherMember.user_id}
+      `;
+
+      // Record transaction
       await supabase
-        .from('profiles')
-        .update({ coin_balance: profile.coin_balance - amount })
-        .eq('id', user.id);
-
-      // Update recipients' balances and create transactions
-      for (const member of members) {
-        await supabase
-          .from('profiles')
-          .update({ coin_balance: supabase.sql`coin_balance + ${tipPerPerson}` })
-          .eq('id', member.user_id);
-
-        await supabase
-          .from('transactions')
-          .insert({
-            from_user_id: user.id,
-            to_user_id: member.user_id,
-            amount: tipPerPerson,
-            transaction_type: 'tip',
-            description: `Tip in chat`
-          });
-      }
-
-      toast({
-        title: "Tip sent!",
-        description: `${tipPerPerson} coins sent to each member`,
-      });
+        .from('transactions')
+        .insert({
+          from_user_id: user.id,
+          to_user_id: otherMember.user_id,
+          amount: amount,
+          transaction_type: 'tip',
+          description: 'Chat tip'
+        });
 
       setTipAmount('');
-      setShowTipInput(false);
+      setShowTipModal(false);
       
-      // Refresh profile data
-      window.location.reload();
-
-    } catch (error: any) {
       toast({
-        title: "Failed to send tip",
-        description: error.message,
+        title: "Tip sent!",
+        description: `You sent ${amount} coins to ${otherMember.profiles.display_name}`,
+      });
+    } catch (error) {
+      console.error('Error sending tip:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send tip",
         variant: "destructive",
       });
     }
   };
 
-  const getWallpaperStyle = () => {
-    if (settings?.chat_wallpaper_color) {
-      return { backgroundColor: settings.chat_wallpaper_color };
-    }
-    return { backgroundColor: 'rgba(249, 250, 251, 1)' };
+  const getOtherMemberName = () => {
+    const otherMember = chatMembers.find(m => m.user_id !== user?.id);
+    return otherMember?.profiles.display_name || 'Chat';
   };
 
   if (loading) {
@@ -271,92 +257,101 @@ const ChatDetailPage = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={getWallpaperStyle()}>
+    <div className="min-h-screen bg-gray-50 flex flex-col" 
+         style={{ backgroundColor: settings?.chat_wallpaper_color || 'rgba(255, 255, 255, 1)' }}>
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => navigate('/chats')}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <div>
-              <h1 className="font-bold text-lg">{chat?.name || 'Chat'}</h1>
-              <p className="text-sm text-gray-500">
-                {chat?.is_group ? 'Group Chat' : 'Direct Message'}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowTipInput(!showTipInput)}
+      <div className="bg-white p-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => navigate('/chats')}
           >
-            <DollarSign className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4" />
           </Button>
+          <h1 className="text-xl font-bold">{getOtherMemberName()}</h1>
         </div>
-        
-        {showTipInput && (
-          <div className="mt-3 flex space-x-2">
-            <Input
-              type="number"
-              placeholder="Enter tip amount"
-              value={tipAmount}
-              onChange={(e) => setTipAmount(e.target.value)}
-              className="flex-1"
-            />
-            <Button onClick={sendTip} size="sm">
-              Send Tip
-            </Button>
-          </div>
-        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowTipModal(true)}
+        >
+          <DollarSign className="w-4 h-4" />
+        </Button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto pb-20">
         {messages.map((message) => (
           <div
             key={message.id}
             className={`flex ${message.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-              message.sender_id === user?.id
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-900 border'
-            } ${message.message_type === 'tip' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' : ''}`}>
-              {message.sender_id !== user?.id && (
-                <p className="text-xs font-medium mb-1">
-                  {message.sender?.display_name}
+            <Card className={`max-w-xs ${
+              message.sender_id === user?.id ? 'bg-blue-500 text-white' : 'bg-white'
+            }`}>
+              <CardContent className="p-3">
+                <p className="text-sm">{message.content}</p>
+                <p className={`text-xs mt-1 ${
+                  message.sender_id === user?.id ? 'text-blue-100' : 'text-gray-500'
+                }`}>
+                  {new Date(message.created_at).toLocaleTimeString()}
                 </p>
-              )}
-              <p className="text-sm">{message.content}</p>
-              <p className="text-xs opacity-70 mt-1">
-                {new Date(message.created_at).toLocaleTimeString()}
-              </p>
-            </div>
+              </CardContent>
+            </Card>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Message Input */}
-      <div className="bg-white border-t border-gray-200 p-4">
+      <div className="bg-white p-4 border-t border-gray-200 fixed bottom-0 left-0 right-0">
         <div className="flex space-x-2">
           <Input
-            placeholder="Type a message..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message..."
             onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
             className="flex-1"
           />
-          <Button onClick={sendMessage} disabled={!newMessage.trim()}>
+          <Button onClick={sendMessage}>
             <Send className="w-4 h-4" />
           </Button>
         </div>
       </div>
+
+      {/* Tip Modal */}
+      {showTipModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-80 mx-4">
+            <CardContent className="p-6">
+              <h3 className="text-lg font-bold mb-4">Send Tip</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Your balance: {profile?.coin_balance || 0} coins
+              </p>
+              <Input
+                type="number"
+                value={tipAmount}
+                onChange={(e) => setTipAmount(e.target.value)}
+                placeholder="Enter amount"
+                className="mb-4"
+              />
+              <div className="flex space-x-2">
+                <Button onClick={sendTip} className="flex-1">
+                  Send Tip
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowTipModal(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

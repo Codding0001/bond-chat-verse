@@ -50,7 +50,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (error && error.code !== 'PGRST116') throw error;
       
       if (data) {
-        setSettings(data);
+        setSettings(data as UserSettings);
         // Apply theme to document
         document.documentElement.className = data.theme;
       }
