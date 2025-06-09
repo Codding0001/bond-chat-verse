@@ -85,7 +85,7 @@ const AdminDashboardPage = () => {
         .from('ban_appeals')
         .select(`
           *,
-          profiles (
+          profiles!ban_appeals_user_id_fkey (
             display_name,
             user_number
           )

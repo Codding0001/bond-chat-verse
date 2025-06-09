@@ -223,10 +223,10 @@ const ChatDetailPage = () => {
       // Update coin balances
       await updateCoins(-amount);
 
-      // Add coins to receiver
+      // Add coins to receiver - using raw SQL string instead of supabase.sql
       await supabase
         .from('profiles')
-        .update({ coin_balance: supabase.sql`coin_balance + ${amount}` })
+        .update({ coin_balance: supabase.rpc('increment_coins', { user_id: otherMember.user_id, amount }) })
         .eq('id', otherMember.user_id);
 
       // Record transaction
