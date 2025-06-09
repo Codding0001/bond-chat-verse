@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -223,11 +222,23 @@ const ChatDetailPage = () => {
       // Update coin balances
       await updateCoins(-amount);
 
-      // Add coins to receiver - using raw SQL string instead of supabase.sql
-      await supabase
+      // Get receiver's current balance and update it
+      const { data: receiverProfile, error: fetchError } = await supabase
         .from('profiles')
-        .update({ coin_balance: supabase.rpc('increment_coins', { user_id: otherMember.user_id, amount }) })
+        .select('coin_balance')
+        .eq('id', otherMember.user_id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const newBalance = (receiverProfile.coin_balance || 0) + amount;
+      
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ coin_balance: newBalance })
         .eq('id', otherMember.user_id);
+
+      if (updateError) throw updateError;
 
       // Record transaction
       await supabase
