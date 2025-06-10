@@ -37,20 +37,29 @@ const ChatsPage = () => {
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [newChatUser, setNewChatUser] = useState('');
   const [users, setUsers] = useState<any[]>([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
 
   useEffect(() => {
     if (user) {
       fetchChats();
-      fetchUsers();
     }
   }, [user]);
+
+  // Only search users when user has typed something
+  useEffect(() => {
+    if (newChatUser.length >= 2) {
+      searchUsers();
+    } else {
+      setUsers([]);
+    }
+  }, [newChatUser]);
 
   const fetchChats = async () => {
     if (!user) return;
 
     try {
-      // Get user's chat memberships
-      const { data: memberships, error: membershipError } = await supabase
+      // Get user's chat memberships without showing errors
+      const { data: memberships } = await supabase
         .from('chat_members')
         .select(`
           chat_id,
@@ -64,88 +73,93 @@ const ChatsPage = () => {
         `)
         .eq('user_id', user.id);
 
-      if (membershipError) throw membershipError;
-
-      // For each chat, get the latest message and other member info
-      const chatsWithDetails = await Promise.all(
-        (memberships || []).map(async (membership: any) => {
-          const chat = membership.chats;
-          
-          // Get latest message
-          const { data: messages } = await supabase
-            .from('messages')
-            .select(`
-              content,
-              created_at,
-              sender_id,
-              profiles:sender_id (display_name)
-            `)
-            .eq('chat_id', chat.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          // Get other member for direct chats
-          let otherMember = null;
-          if (!chat.is_group) {
-            const { data: otherMembers } = await supabase
-              .from('chat_members')
+      if (memberships && memberships.length > 0) {
+        // Process chats if we have any
+        const chatsWithDetails = await Promise.all(
+          memberships.map(async (membership: any) => {
+            const chat = membership.chats;
+            
+            // Get latest message
+            const { data: messages } = await supabase
+              .from('messages')
               .select(`
-                user_id,
-                profiles (
-                  display_name,
-                  user_number,
-                  is_online
-                )
+                content,
+                created_at,
+                sender_id,
+                profiles:sender_id (display_name)
               `)
               .eq('chat_id', chat.id)
-              .neq('user_id', user.id);
+              .order('created_at', { ascending: false })
+              .limit(1);
 
-            if (otherMembers && otherMembers.length > 0) {
-              otherMember = otherMembers[0].profiles;
+            // Get other member for direct chats
+            let otherMember = null;
+            if (!chat.is_group) {
+              const { data: otherMembers } = await supabase
+                .from('chat_members')
+                .select(`
+                  user_id,
+                  profiles (
+                    display_name,
+                    user_number,
+                    is_online
+                  )
+                `)
+                .eq('chat_id', chat.id)
+                .neq('user_id', user.id);
+
+              if (otherMembers && otherMembers.length > 0) {
+                otherMember = otherMembers[0].profiles;
+              }
             }
-          }
 
-          return {
-            id: chat.id,
-            name: chat.name || (otherMember?.display_name || 'Unknown User'),
-            is_group: chat.is_group,
-            created_at: chat.created_at,
-            last_message: messages?.[0] ? {
-              content: messages[0].content,
-              created_at: messages[0].created_at,
-              sender_name: messages[0].profiles?.display_name || 'Unknown'
-            } : undefined,
-            unread_count: membership.unread_count || 0,
-            other_member: otherMember
-          };
-        })
-      );
+            return {
+              id: chat.id,
+              name: chat.name || (otherMember?.display_name || 'Unknown User'),
+              is_group: chat.is_group,
+              created_at: chat.created_at,
+              last_message: messages?.[0] ? {
+                content: messages[0].content,
+                created_at: messages[0].created_at,
+                sender_name: messages[0].profiles?.display_name || 'Unknown'
+              } : undefined,
+              unread_count: membership.unread_count || 0,
+              other_member: otherMember
+            };
+          })
+        );
 
-      setChats(chatsWithDetails);
+        setChats(chatsWithDetails);
+      } else {
+        setChats([]);
+      }
     } catch (error) {
       console.error('Error fetching chats:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load chats",
-        variant: "destructive",
-      });
+      setChats([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchUsers = async () => {
+  const searchUsers = async () => {
+    if (!newChatUser || newChatUser.length < 2) return;
+    
+    setSearchingUsers(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, display_name, user_number, is_online')
         .neq('id', user?.id)
-        .order('display_name');
+        .or(`display_name.ilike.%${newChatUser}%,user_number.ilike.%${newChatUser}%`)
+        .limit(10);
 
       if (error) throw error;
       setUsers(data || []);
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error searching users:', error);
+      setUsers([]);
+    } finally {
+      setSearchingUsers(false);
     }
   };
 
@@ -214,28 +228,23 @@ const ChatsPage = () => {
     chat.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredUsers = users.filter(user =>
-    user.display_name.toLowerCase().includes(newChatUser.toLowerCase()) ||
-    user.user_number.includes(newChatUser)
-  );
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <div className="bg-white p-4 border-b border-gray-200 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">Chats</h1>
+      <div className="bg-card p-4 border-b border-border flex items-center justify-between">
+        <h1 className="text-xl font-bold text-foreground">Chats</h1>
         <Button
           onClick={() => setShowNewChatModal(true)}
           size="sm"
-          className="bg-blue-600 hover:bg-blue-700"
+          className="bg-primary hover:bg-primary/90"
         >
           <Plus className="w-4 h-4" />
         </Button>
@@ -244,7 +253,7 @@ const ChatsPage = () => {
       <div className="p-4">
         {/* Search */}
         <div className="relative mb-4">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search chats..."
             value={searchTerm}
@@ -265,42 +274,42 @@ const ChatsPage = () => {
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-3">
                     <div className="relative">
-                      <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                      <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
                         {chat.is_group ? (
-                          <Users className="w-6 h-6 text-blue-600" />
+                          <Users className="w-6 h-6 text-primary" />
                         ) : (
-                          <MessageCircle className="w-6 h-6 text-blue-600" />
+                          <MessageCircle className="w-6 h-6 text-primary" />
                         )}
                       </div>
                       {chat.other_member?.is_online && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
                       )}
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-medium text-gray-900 truncate">
+                        <h3 className="font-medium text-foreground truncate">
                           {chat.name}
                         </h3>
                         {chat.last_message && (
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-muted-foreground">
                             {new Date(chat.last_message.created_at).toLocaleDateString()}
                           </span>
                         )}
                       </div>
                       
                       {chat.last_message ? (
-                        <p className="text-sm text-gray-600 truncate">
+                        <p className="text-sm text-muted-foreground truncate">
                           {chat.last_message.sender_name}: {chat.last_message.content}
                         </p>
                       ) : (
-                        <p className="text-sm text-gray-400">No messages yet</p>
+                        <p className="text-sm text-muted-foreground">No messages yet</p>
                       )}
                     </div>
                     
                     {chat.unread_count > 0 && (
-                      <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-                        <span className="text-xs text-white font-medium">
+                      <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                        <span className="text-xs text-primary-foreground font-medium">
                           {chat.unread_count > 9 ? '9+' : chat.unread_count}
                         </span>
                       </div>
@@ -311,9 +320,9 @@ const ChatsPage = () => {
             ))
           ) : (
             <div className="text-center py-8">
-              <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600">No chats found</p>
-              <p className="text-sm text-gray-500">Start a new conversation!</p>
+              <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-foreground">No chats found</p>
+              <p className="text-sm text-muted-foreground">Start a new conversation!</p>
             </div>
           )}
         </div>
@@ -328,33 +337,46 @@ const ChatsPage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
-                placeholder="Search users by name or number..."
+                placeholder="Search by name or user number..."
                 value={newChatUser}
                 onChange={(e) => setNewChatUser(e.target.value)}
               />
               
+              {searchingUsers && (
+                <div className="text-center py-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mx-auto"></div>
+                </div>
+              )}
+              
               <div className="max-h-48 overflow-y-auto space-y-2">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-2 hover:bg-gray-50 rounded cursor-pointer"
+                    className="flex items-center justify-between p-2 hover:bg-muted rounded cursor-pointer"
                     onClick={() => createDirectChat(user.id)}
                   >
                     <div>
                       <p className="font-medium">{user.display_name}</p>
-                      <p className="text-sm text-gray-600">#{user.user_number}</p>
+                      <p className="text-sm text-muted-foreground">#{user.user_number}</p>
                     </div>
                     {user.is_online && (
                       <div className="w-3 h-3 bg-green-500 rounded-full" />
                     )}
                   </div>
                 ))}
+                {newChatUser.length >= 2 && users.length === 0 && !searchingUsers && (
+                  <p className="text-center text-muted-foreground py-4">No users found</p>
+                )}
               </div>
               
               <div className="flex space-x-2">
                 <Button
                   variant="outline"
-                  onClick={() => setShowNewChatModal(false)}
+                  onClick={() => {
+                    setShowNewChatModal(false);
+                    setNewChatUser('');
+                    setUsers([]);
+                  }}
                   className="flex-1"
                 >
                   Cancel

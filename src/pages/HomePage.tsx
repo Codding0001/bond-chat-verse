@@ -43,7 +43,7 @@ const HomePage = () => {
       const callLogs = savedLogs ? JSON.parse(savedLogs) : [];
       const totalCalls = callLogs.length;
 
-      // Fetch online users count
+      // Fetch ONLY online users count (not total users)
       const { data: onlineProfiles } = await supabase
         .from('profiles')
         .select('id')
@@ -107,14 +107,14 @@ const HomePage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-background pb-20">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
         <div className="flex items-center justify-between">
@@ -135,38 +135,39 @@ const HomePage = () => {
       <div className="p-4 space-y-6">
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-4">
-          <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/chats')}>
+          <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/chats')}>
             <CardContent className="p-4 text-center">
-              <MessageCircle className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{stats.totalChats}</p>
-              <p className="text-sm text-gray-600">Total Chats</p>
+              <MessageCircle className="w-8 h-8 text-primary mx-auto mb-2" />
+              <p className="text-2xl font-bold text-foreground">{stats.totalChats}</p>
+              <p className="text-sm text-muted-foreground">Total Chats</p>
               {stats.unreadMessages > 0 && (
                 <p className="text-xs text-red-600">{stats.unreadMessages} unread</p>
               )}
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/calls')}>
+          <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/calls')}>
             <CardContent className="p-4 text-center">
               <Phone className="w-8 h-8 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{stats.totalCalls}</p>
-              <p className="text-sm text-gray-600">Total Calls</p>
+              <p className="text-2xl font-bold text-foreground">{stats.totalCalls}</p>
+              <p className="text-sm text-muted-foreground">Total Calls</p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="hover:shadow-md transition-all duration-300">
             <CardContent className="p-4 text-center">
               <Users className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{stats.onlineUsers}</p>
-              <p className="text-sm text-gray-600">Online Users</p>
+              <p className="text-2xl font-bold text-foreground">{stats.onlineUsers}</p>
+              <p className="text-sm text-muted-foreground">Online Now</p>
+              <div className="w-2 h-2 bg-green-500 rounded-full mx-auto mt-1 animate-pulse"></div>
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/gifts')}>
+          <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/gifts')}>
             <CardContent className="p-4 text-center">
               <Gift className="w-8 h-8 text-pink-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">🎁</p>
-              <p className="text-sm text-gray-600">Send Gifts</p>
+              <p className="text-2xl font-bold text-foreground">🎁</p>
+              <p className="text-sm text-muted-foreground">Send Gifts</p>
             </CardContent>
           </Card>
         </div>
@@ -179,7 +180,7 @@ const HomePage = () => {
           <CardContent className="space-y-3">
             <Button 
               onClick={() => navigate('/chats')} 
-              className="w-full justify-start"
+              className="w-full justify-start hover:scale-105 transition-transform"
               variant="outline"
             >
               <MessageCircle className="w-4 h-4 mr-2" />
@@ -187,7 +188,7 @@ const HomePage = () => {
             </Button>
             <Button 
               onClick={() => navigate('/calls')} 
-              className="w-full justify-start"
+              className="w-full justify-start hover:scale-105 transition-transform"
               variant="outline"
             >
               <Phone className="w-4 h-4 mr-2" />
@@ -195,7 +196,7 @@ const HomePage = () => {
             </Button>
             <Button 
               onClick={() => navigate('/wallet')} 
-              className="w-full justify-start"
+              className="w-full justify-start hover:scale-105 transition-transform"
               variant="outline"
             >
               <Coins className="w-4 h-4 mr-2" />
@@ -215,24 +216,24 @@ const HomePage = () => {
                 {recentChats.map((chat) => (
                   <div
                     key={chat.id}
-                    className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer"
+                    className="flex items-center space-x-3 p-3 hover:bg-muted rounded-lg cursor-pointer transition-all duration-300 hover:scale-105"
                     onClick={() => navigate(`/chats/${chat.id}`)}
                   >
                     <div className="relative">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
                         {chat.is_group ? (
-                          <Users className="w-5 h-5 text-blue-600" />
+                          <Users className="w-5 h-5 text-primary" />
                         ) : (
-                          <MessageCircle className="w-5 h-5 text-blue-600" />
+                          <MessageCircle className="w-5 h-5 text-primary" />
                         )}
                       </div>
                       {chat.other_member?.is_online && (
-                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background animate-pulse" />
                       )}
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">{chat.name || 'Unnamed Chat'}</p>
-                      <p className="text-sm text-gray-600">
+                      <p className="font-medium text-foreground">{chat.name || 'Unnamed Chat'}</p>
+                      <p className="text-sm text-muted-foreground">
                         {chat.is_group ? 'Group Chat' : 'Direct Message'}
                       </p>
                     </div>
@@ -240,7 +241,7 @@ const HomePage = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-4">No recent chats</p>
+              <p className="text-muted-foreground text-center py-4">No recent chats</p>
             )}
           </CardContent>
         </Card>
