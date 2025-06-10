@@ -1,130 +1,67 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Coins, ArrowUpRight, ArrowDownLeft, Gift, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Coins, CreditCard, DollarSign, Plus } from 'lucide-react';
 
 const WalletPage = () => {
-  const { profile, user } = useAuth();
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [tipAmount, setTipAmount] = useState('');
-  const [tipRecipient, setTipRecipient] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { user, profile } = useAuth();
   const { toast } = useToast();
+  const [coinAmount, setCoinAmount] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchTransactions();
-    }
-  }, [user]);
+  // Exchange rate: 1 USD = 100 coins
+  const exchangeRate = 100;
+  const dollarValue = coinAmount ? (parseInt(coinAmount) / exchangeRate).toFixed(2) : '0.00';
 
-  const fetchTransactions = async () => {
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select(`
-          *,
-          from_user:from_user_id(display_name, user_number),
-          to_user:to_user_id(display_name, user_number)
-        `)
-        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-      setTransactions(data || []);
-    } catch (error) {
-      console.error('Error fetching transactions:', error);
-    }
-  };
-
-  const sendTip = async () => {
-    if (!user || !profile || !tipAmount || !tipRecipient) return;
-
-    const amount = parseInt(tipAmount);
-    if (amount <= 0 || amount > profile.coin_balance) {
+  const addCoins = async () => {
+    if (!user || !coinAmount || parseInt(coinAmount) <= 0) {
       toast({
         title: "Invalid amount",
-        description: "Please enter a valid amount",
+        description: "Please enter a valid coin amount.",
         variant: "destructive",
       });
       return;
     }
 
     setLoading(true);
-
     try {
-      // Find recipient by user number
-      const { data: recipient, error: recipientError } = await supabase
+      const newBalance = (profile?.coin_balance || 0) + parseInt(coinAmount);
+      
+      const { error } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('user_number', tipRecipient)
-        .single();
-
-      if (recipientError || !recipient) {
-        toast({
-          title: "User not found",
-          description: "Could not find user with that number",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Calculate fee (1%)
-      const fee = Math.ceil(amount * 0.01);
-      const finalAmount = amount - fee;
-
-      // Create transaction
-      const { error: transactionError } = await supabase
-        .from('transactions')
-        .insert({
-          from_user_id: user.id,
-          to_user_id: recipient.id,
-          amount: finalAmount,
-          transaction_type: 'tip',
-          description: `Tip to ${recipient.display_name} (${fee} coin fee)`
-        });
-
-      if (transactionError) throw transactionError;
-
-      // Update sender balance
-      const { error: senderError } = await supabase
-        .from('profiles')
-        .update({ coin_balance: profile.coin_balance - amount })
+        .update({ coin_balance: newBalance })
         .eq('id', user.id);
 
-      if (senderError) throw senderError;
+      if (error) throw error;
 
-      // Update recipient balance
-      const { error: recipientUpdateError } = await supabase
-        .from('profiles')
-        .update({ coin_balance: recipient.coin_balance + finalAmount })
-        .eq('id', recipient.id);
-
-      if (recipientUpdateError) throw recipientUpdateError;
+      // Record transaction
+      await supabase
+        .from('transactions')
+        .insert({
+          to_user_id: user.id,
+          amount: parseInt(coinAmount),
+          transaction_type: 'purchase',
+          description: `Purchased ${coinAmount} coins for $${dollarValue}`
+        });
 
       toast({
-        title: "Tip sent!",
-        description: `${finalAmount} coins sent to ${recipient.display_name}`,
+        title: "Coins added! 🪙",
+        description: `${coinAmount} coins have been added to your wallet.`,
       });
 
-      setTipAmount('');
-      setTipRecipient('');
-      fetchTransactions();
-      
-      // Refresh profile data
+      setCoinAmount('');
+      // Refresh to show new balance
       window.location.reload();
-
-    } catch (error: any) {
+    } catch (error) {
+      console.error('Error adding coins:', error);
       toast({
-        title: "Transaction failed",
-        description: error.message,
+        title: "Failed to add coins",
+        description: "Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -132,115 +69,129 @@ const WalletPage = () => {
     }
   };
 
-  if (!profile) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const coinPackages = [
+    { coins: 1000, price: 10, bonus: 0 },
+    { coins: 5000, price: 50, bonus: 500 },
+    { coins: 10000, price: 100, bonus: 1500 },
+    { coins: 50000, price: 500, bonus: 10000 },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-green-500 to-blue-600 text-white p-6">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <Coins className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold">{profile.coin_balance}</h1>
-          <p className="text-green-100">Total Coins</p>
+      <div className="bg-gradient-to-r from-green-600 to-blue-600 text-white p-6">
+        <h1 className="text-2xl font-bold flex items-center">
+          <Coins className="w-6 h-6 mr-2" />
+          My Wallet
+        </h1>
+        <div className="mt-4 text-center">
+          <div className="text-4xl font-bold mb-2">{profile?.coin_balance || 0}</div>
+          <p className="text-green-100">Available Coins</p>
         </div>
       </div>
 
       <div className="p-4 space-y-6">
-        {/* Send Tip */}
+        {/* Custom Amount */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <ArrowUpRight className="w-5 h-5 mr-2" />
-              Send Tip
+              <Plus className="w-5 h-5 mr-2" />
+              Add Custom Amount
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Recipient User Number
-              </label>
-              <Input
-                placeholder="Enter 6-digit user number"
-                value={tipRecipient}
-                onChange={(e) => setTipRecipient(e.target.value)}
-                maxLength={6}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Amount (1% fee applies)
-              </label>
+              <label className="block text-sm font-medium mb-2">Coin Amount</label>
               <Input
                 type="number"
-                placeholder="Enter amount"
-                value={tipAmount}
-                onChange={(e) => setTipAmount(e.target.value)}
+                placeholder="Enter coin amount"
+                value={coinAmount}
+                onChange={(e) => setCoinAmount(e.target.value)}
                 min="1"
-                max={profile.coin_balance}
               />
             </div>
             
-            <Button 
-              onClick={sendTip} 
-              disabled={loading || !tipAmount || !tipRecipient}
+            <div className="p-3 bg-muted rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Coins:</span>
+                <span className="font-medium">{coinAmount || 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">USD Equivalent:</span>
+                <span className="font-medium text-green-600">${dollarValue}</span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Exchange Rate: 100 coins = $1.00
+              </div>
+            </div>
+
+            <Button
+              onClick={addCoins}
+              disabled={loading || !coinAmount || parseInt(coinAmount) <= 0}
               className="w-full"
             >
-              {loading ? 'Sending...' : 'Send Tip'}
+              {loading ? 'Processing...' : `Add ${coinAmount || 0} Coins for $${dollarValue}`}
             </Button>
           </CardContent>
         </Card>
 
-        {/* Recent Transactions */}
+        {/* Coin Packages */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Transactions</CardTitle>
+            <CardTitle>Coin Packages</CardTitle>
           </CardHeader>
           <CardContent>
-            {transactions.length > 0 ? (
-              <div className="space-y-3">
-                {transactions.map((transaction) => (
-                  <div key={transaction.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center">
-                      {transaction.from_user_id === user?.id ? (
-                        <ArrowUpRight className="w-5 h-5 text-red-500 mr-3" />
-                      ) : (
-                        <ArrowDownLeft className="w-5 h-5 text-green-500 mr-3" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {coinPackages.map((pkg) => (
+                <div
+                  key={pkg.coins}
+                  className="p-4 border rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => {
+                    setCoinAmount((pkg.coins + pkg.bonus).toString());
+                  }}
+                >
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary mb-2">
+                      {(pkg.coins + pkg.bonus).toLocaleString()}
+                    </div>
+                    <div className="text-sm text-muted-foreground mb-2">
+                      {pkg.coins.toLocaleString()} coins
+                      {pkg.bonus > 0 && (
+                        <span className="text-green-600 font-medium">
+                          {' '}+ {pkg.bonus.toLocaleString()} bonus
+                        </span>
                       )}
-                      <div>
-                        <p className="font-medium">
-                          {transaction.from_user_id === user?.id ? 'Sent' : 'Received'}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {transaction.from_user_id === user?.id 
-                            ? `To ${transaction.to_user?.display_name} (#${transaction.to_user?.user_number})`
-                            : `From ${transaction.from_user?.display_name} (#${transaction.from_user?.user_number})`
-                          }
-                        </p>
+                    </div>
+                    <div className="text-lg font-bold text-green-600">
+                      ${pkg.price}
+                    </div>
+                    {pkg.bonus > 0 && (
+                      <div className="mt-2 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs">
+                        Best Value!
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <p className={`font-bold ${transaction.from_user_id === user?.id ? 'text-red-500' : 'text-green-500'}`}>
-                        {transaction.from_user_id === user?.id ? '-' : '+'}{transaction.amount}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(transaction.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500 text-center py-4">No transactions yet</p>
-            )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Transaction Info */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <CreditCard className="w-5 h-5 mr-2" />
+              Payment Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>• This is a testing environment</p>
+              <p>• No real payments will be processed</p>
+              <p>• Coins are added instantly for testing purposes</p>
+              <p>• Exchange rate: 100 coins = $1.00 USD</p>
+            </div>
           </CardContent>
         </Card>
       </div>

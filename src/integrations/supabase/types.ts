@@ -67,6 +67,51 @@ export type Database = {
           },
         ]
       }
+      call_logs: {
+        Row: {
+          call_status: string
+          call_type: string
+          caller_id: string
+          created_at: string
+          duration: number | null
+          id: string
+          receiver_id: string
+        }
+        Insert: {
+          call_status?: string
+          call_type?: string
+          caller_id: string
+          created_at?: string
+          duration?: number | null
+          id?: string
+          receiver_id: string
+        }
+        Update: {
+          call_status?: string
+          call_type?: string
+          caller_id?: string
+          created_at?: string
+          duration?: number | null
+          id?: string
+          receiver_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_logs_caller_id_fkey"
+            columns: ["caller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_receiver_id_fkey"
+            columns: ["receiver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_members: {
         Row: {
           chat_id: string | null
@@ -143,33 +188,39 @@ export type Database = {
       }
       gifts: {
         Row: {
+          can_exchange: boolean | null
           created_at: string | null
           gift_emoji: string
           gift_name: string
           gift_type: string
           id: string
+          is_legendary: boolean | null
           message: string | null
           price: number
           receiver_id: string | null
           sender_id: string | null
         }
         Insert: {
+          can_exchange?: boolean | null
           created_at?: string | null
           gift_emoji: string
           gift_name: string
           gift_type: string
           id?: string
+          is_legendary?: boolean | null
           message?: string | null
           price: number
           receiver_id?: string | null
           sender_id?: string | null
         }
         Update: {
+          can_exchange?: boolean | null
           created_at?: string | null
           gift_emoji?: string
           gift_name?: string
           gift_type?: string
           id?: string
+          is_legendary?: boolean | null
           message?: string | null
           price?: number
           receiver_id?: string | null
@@ -244,9 +295,11 @@ export type Database = {
           created_at: string | null
           display_name: string
           email: string
+          has_legendary_badge: boolean | null
           id: string
           is_admin: boolean | null
           is_online: boolean | null
+          legendary_badge_color: string | null
           profile_picture: string | null
           updated_at: string | null
           user_number: string
@@ -257,9 +310,11 @@ export type Database = {
           created_at?: string | null
           display_name: string
           email: string
+          has_legendary_badge?: boolean | null
           id: string
           is_admin?: boolean | null
           is_online?: boolean | null
+          legendary_badge_color?: string | null
           profile_picture?: string | null
           updated_at?: string | null
           user_number: string
@@ -270,9 +325,11 @@ export type Database = {
           created_at?: string | null
           display_name?: string
           email?: string
+          has_legendary_badge?: boolean | null
           id?: string
           is_admin?: boolean | null
           is_online?: boolean | null
+          legendary_badge_color?: string | null
           profile_picture?: string | null
           updated_at?: string | null
           user_number?: string

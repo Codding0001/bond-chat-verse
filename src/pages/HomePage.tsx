@@ -38,12 +38,15 @@ const HomePage = () => {
       const totalChats = chatMembers?.length || 0;
       const unreadMessages = chatMembers?.reduce((sum, member) => sum + (member.unread_count || 0), 0) || 0;
 
-      // Get call logs from localStorage for now
-      const savedLogs = localStorage.getItem(`call_logs_${user.id}`);
-      const callLogs = savedLogs ? JSON.parse(savedLogs) : [];
-      const totalCalls = callLogs.length;
+      // Get call logs from database
+      const { data: callLogs } = await supabase
+        .from('call_logs')
+        .select('id')
+        .or(`caller_id.eq.${user.id},receiver_id.eq.${user.id}`);
 
-      // Fetch ONLY online users count (not total users)
+      const totalCalls = callLogs?.length || 0;
+
+      // Fetch ONLY online users count
       const { data: onlineProfiles } = await supabase
         .from('profiles')
         .select('id')
@@ -119,7 +122,14 @@ const HomePage = () => {
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Welcome back!</h1>
+            <h1 className="text-2xl font-bold flex items-center">
+              Welcome back!
+              {profile?.has_legendary_badge && (
+                <div className="ml-2 px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full text-xs font-bold text-black animate-pulse-soft shadow-lg">
+                  ✨ LEGENDARY ✨
+                </div>
+              )}
+            </h1>
             <p className="text-blue-100">{profile?.display_name}</p>
           </div>
           <div className="text-right">
@@ -133,26 +143,30 @@ const HomePage = () => {
       </div>
 
       <div className="p-4 space-y-6">
-        {/* Stats Grid */}
+        {/* Stats Grid - Only show if values > 0 */}
         <div className="grid grid-cols-2 gap-4">
-          <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/chats')}>
-            <CardContent className="p-4 text-center">
-              <MessageCircle className="w-8 h-8 text-primary mx-auto mb-2" />
-              <p className="text-2xl font-bold text-foreground">{stats.totalChats}</p>
-              <p className="text-sm text-muted-foreground">Total Chats</p>
-              {stats.unreadMessages > 0 && (
-                <p className="text-xs text-red-600">{stats.unreadMessages} unread</p>
-              )}
-            </CardContent>
-          </Card>
+          {stats.totalChats > 0 && (
+            <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/chats')}>
+              <CardContent className="p-4 text-center">
+                <MessageCircle className="w-8 h-8 text-primary mx-auto mb-2" />
+                <p className="text-2xl font-bold text-foreground">{stats.totalChats}</p>
+                <p className="text-sm text-muted-foreground">Total Chats</p>
+                {stats.unreadMessages > 0 && (
+                  <p className="text-xs text-red-600">{stats.unreadMessages} unread</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-          <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/calls')}>
-            <CardContent className="p-4 text-center">
-              <Phone className="w-8 h-8 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-foreground">{stats.totalCalls}</p>
-              <p className="text-sm text-muted-foreground">Total Calls</p>
-            </CardContent>
-          </Card>
+          {stats.totalCalls > 0 && (
+            <Card className="cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-105" onClick={() => navigate('/calls')}>
+              <CardContent className="p-4 text-center">
+                <Phone className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                <p className="text-2xl font-bold text-foreground">{stats.totalCalls}</p>
+                <p className="text-sm text-muted-foreground">Total Calls</p>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="hover:shadow-md transition-all duration-300">
             <CardContent className="p-4 text-center">
@@ -206,12 +220,12 @@ const HomePage = () => {
         </Card>
 
         {/* Recent Chats */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Chats</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentChats.length > 0 ? (
+        {recentChats.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Chats</CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-3">
                 {recentChats.map((chat) => (
                   <div
@@ -240,11 +254,9 @@ const HomePage = () => {
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-muted-foreground text-center py-4">No recent chats</p>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

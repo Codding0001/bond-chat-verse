@@ -105,6 +105,27 @@
   .dark body {
     @apply bg-background text-foreground;
   }
+
+  /* Dark mode fixes */
+  .dark .bg-muted {
+    @apply bg-muted;
+  }
+
+  .dark .text-muted-foreground {
+    @apply text-muted-foreground;
+  }
+
+  .dark .bg-card {
+    @apply bg-card;
+  }
+
+  .dark .text-foreground {
+    @apply text-foreground;
+  }
+
+  .dark .border-border {
+    @apply border-border;
+  }
 }
 
 /* Custom animations for gifts */
@@ -140,8 +161,17 @@
   }
 }
 
+@keyframes legendary-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+  }
+}
+
 .animate-bounce-gift {
-  animation: bounce-gift 1s ease-in-out;
+  animation: bounce-gift 2s ease-in-out infinite;
 }
 
 .animate-fade-in {
@@ -150,4 +180,35 @@
 
 .animate-pulse-soft {
   animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-legendary-glow {
+  animation: legendary-glow 2s ease-in-out infinite;
+}
+
+/* Legendary badge styles */
+.legendary-badge {
+  background: linear-gradient(45deg, #ffd700, #ffed4e);
+  color: #000;
+  font-weight: bold;
+  animation: pulse-soft 2s ease-in-out infinite;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* Museum showcase glass effect */
+.glass-showcase {
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.glass-showcase::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+  pointer-events: none;
 }

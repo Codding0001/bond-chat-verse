@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Edit, LogOut, Gift, Settings, Coins } from 'lucide-react';
+import { User, Edit, LogOut, Gift, Settings, Coins, Crown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import ProfilePictureUpload from '@/components/ProfilePictureUpload';
 
 const ProfilePage = () => {
   const { user, profile, logout, updateProfile } = useAuth();
@@ -20,7 +21,7 @@ const ProfilePage = () => {
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name);
-      setBio(profile.bio);
+      setBio(profile.bio || '');
       fetchReceivedGifts();
     }
   }, [profile]);
@@ -53,21 +54,37 @@ const ProfilePage = () => {
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-background pb-20">
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white p-6">
         <div className="text-center">
-          <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <User className="w-10 h-10" />
+          <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center overflow-hidden">
+            {profile.profile_picture ? (
+              <img 
+                src={profile.profile_picture} 
+                alt="Profile" 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <User className="w-10 h-10" />
+            )}
           </div>
-          <h1 className="text-xl font-bold">{profile.display_name}</h1>
+          <h1 className="text-xl font-bold flex items-center justify-center">
+            {profile.display_name}
+            {profile.has_legendary_badge && (
+              <div className="ml-2 px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full text-xs font-bold text-black animate-pulse-soft flex items-center">
+                <Crown className="w-3 h-3 mr-1" />
+                LEGENDARY
+              </div>
+            )}
+          </h1>
           <p className="text-purple-100">#{profile.user_number}</p>
           <div className="flex items-center justify-center mt-2">
             <Coins className="w-4 h-4 mr-1" />
@@ -77,6 +94,16 @@ const ProfilePage = () => {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Profile Picture Upload */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile Picture</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProfilePictureUpload />
+          </CardContent>
+        </Card>
+
         {/* Profile Info */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -94,7 +121,7 @@ const ProfilePage = () => {
             {isEditing ? (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Display Name
                   </label>
                   <Input
@@ -105,7 +132,7 @@ const ProfilePage = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Bio
                   </label>
                   <Textarea
@@ -123,23 +150,23 @@ const ProfilePage = () => {
             ) : (
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm text-gray-600">Display Name</p>
+                  <p className="text-sm text-muted-foreground">Display Name</p>
                   <p className="font-medium">{profile.display_name}</p>
                 </div>
                 
                 <div>
-                  <p className="text-sm text-gray-600">Email</p>
+                  <p className="text-sm text-muted-foreground">Email</p>
                   <p className="font-medium">{profile.email}</p>
                 </div>
                 
                 <div>
-                  <p className="text-sm text-gray-600">User Number</p>
+                  <p className="text-sm text-muted-foreground">User Number</p>
                   <p className="font-medium">#{profile.user_number}</p>
                 </div>
                 
                 <div>
-                  <p className="text-sm text-gray-600">Bio</p>
-                  <p className="font-medium">{profile.bio}</p>
+                  <p className="text-sm text-muted-foreground">Bio</p>
+                  <p className="font-medium">{profile.bio || 'No bio set'}</p>
                 </div>
               </div>
             )}
@@ -158,15 +185,33 @@ const ProfilePage = () => {
             {receivedGifts.length > 0 ? (
               <div className="grid grid-cols-3 gap-4">
                 {receivedGifts.map((gift) => (
-                  <div key={gift.id} className="text-center p-3 bg-gray-50 rounded-lg">
-                    <div className="text-2xl mb-1">{gift.gift_emoji}</div>
-                    <p className="text-xs text-gray-600">{gift.gift_name}</p>
-                    <p className="text-xs text-gray-500 mt-1">From {gift.sender?.display_name}</p>
+                  <div 
+                    key={gift.id} 
+                    className={`text-center p-3 rounded-lg relative ${
+                      gift.is_legendary
+                        ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900 dark:to-yellow-800'
+                        : 'bg-muted'
+                    }`}
+                  >
+                    {gift.is_legendary && (
+                      <div className="absolute -top-1 -right-1 text-xs">
+                        <Crown className="w-3 h-3 text-yellow-600" />
+                      </div>
+                    )}
+                    <div 
+                      className={`text-2xl mb-1 ${
+                        gift.is_legendary ? 'animate-bounce-gift' : ''
+                      }`}
+                    >
+                      {gift.gift_emoji}
+                    </div>
+                    <p className="text-xs font-medium">{gift.gift_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">From {gift.sender?.display_name}</p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-4">No gifts received yet</p>
+              <p className="text-muted-foreground text-center py-4">No gifts received yet</p>
             )}
           </CardContent>
         </Card>
@@ -182,21 +227,21 @@ const ProfilePage = () => {
           <CardContent>
             <div className="space-y-3">
               <button 
-                className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between"
+                className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between"
                 onClick={() => navigate('/settings')}
               >
                 <span>App Settings</span>
-                <span className="text-gray-400">›</span>
+                <span className="text-muted-foreground">›</span>
               </button>
               
-              <button className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between">
+              <button className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between">
                 <span>Privacy Settings</span>
-                <span className="text-gray-400">›</span>
+                <span className="text-muted-foreground">›</span>
               </button>
               
-              <button className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between">
+              <button className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between">
                 <span>Notification Preferences</span>
-                <span className="text-gray-400">›</span>
+                <span className="text-muted-foreground">›</span>
               </button>
             </div>
           </CardContent>

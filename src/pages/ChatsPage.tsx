@@ -45,9 +45,9 @@ const ChatsPage = () => {
     }
   }, [user]);
 
-  // Only search users when user has typed something
+  // Only search users when user has typed something significant
   useEffect(() => {
-    if (newChatUser.length >= 2) {
+    if (newChatUser.length >= 3) {
       searchUsers();
     } else {
       setUsers([]);
@@ -58,8 +58,9 @@ const ChatsPage = () => {
     if (!user) return;
 
     try {
-      // Get user's chat memberships without showing errors
-      const { data: memberships } = await supabase
+      setLoading(true);
+      // Get user's chat memberships
+      const { data: memberships, error: memberError } = await supabase
         .from('chat_members')
         .select(`
           chat_id,
@@ -72,6 +73,12 @@ const ChatsPage = () => {
           )
         `)
         .eq('user_id', user.id);
+
+      if (memberError) {
+        console.error('Error fetching memberships:', memberError);
+        setChats([]);
+        return;
+      }
 
       if (memberships && memberships.length > 0) {
         // Process chats if we have any
@@ -142,7 +149,7 @@ const ChatsPage = () => {
   };
 
   const searchUsers = async () => {
-    if (!newChatUser || newChatUser.length < 2) return;
+    if (!newChatUser || newChatUser.length < 3) return;
     
     setSearchingUsers(true);
     try {
@@ -184,6 +191,7 @@ const ChatsPage = () => {
           if (otherMemberships && otherMemberships.length > 0) {
             // Chat already exists
             navigate(`/chats/${membership.chat_id}`);
+            setShowNewChatModal(false);
             return;
           }
         }
@@ -213,12 +221,14 @@ const ChatsPage = () => {
 
       navigate(`/chats/${newChat.id}`);
       setShowNewChatModal(false);
+      setNewChatUser('');
+      setUsers([]);
       
     } catch (error) {
       console.error('Error creating chat:', error);
       toast({
         title: "Error",
-        description: "Failed to create chat",
+        description: "Failed to create chat. Please try again.",
         variant: "destructive",
       });
     }
@@ -337,7 +347,7 @@ const ChatsPage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
-                placeholder="Search by name or user number..."
+                placeholder="Search by name or user number (min 3 chars)..."
                 value={newChatUser}
                 onChange={(e) => setNewChatUser(e.target.value)}
               />
@@ -364,8 +374,11 @@ const ChatsPage = () => {
                     )}
                   </div>
                 ))}
-                {newChatUser.length >= 2 && users.length === 0 && !searchingUsers && (
+                {newChatUser.length >= 3 && users.length === 0 && !searchingUsers && (
                   <p className="text-center text-muted-foreground py-4">No users found</p>
+                )}
+                {newChatUser.length < 3 && (
+                  <p className="text-center text-muted-foreground py-4">Type at least 3 characters to search</p>
                 )}
               </div>
               
