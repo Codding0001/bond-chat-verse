@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -37,6 +38,10 @@ export const useAuth = () => {
   return context;
 };
 
+const generateUserNumber = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -44,18 +49,79 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  const createProfile = async (userId: string, email: string, displayName: string) => {
+    try {
+      const userNumber = generateUserNumber();
+      
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          email: email,
+          display_name: displayName,
+          user_number: userNumber,
+          bio: 'Hello there! I am using ChatApp.',
+          coin_balance: 100,
+          is_online: true,
+          is_admin: false
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      // Also create user settings
+      await supabase
+        .from('user_settings')
+        .insert({
+          user_id: userId,
+          theme: 'light',
+          notification_sound: true,
+          chat_wallpaper_color: 'rgba(255, 255, 255, 1)'
+        });
+
+      return data;
+    } catch (error) {
+      console.error('Error creating profile:', error);
+      throw error;
+    }
+  };
+
   const fetchProfile = async (userId: string) => {
     try {
+      console.log('Fetching profile for user:', userId);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.log('Profile not found, creating new profile...');
+        // If profile doesn't exist, create it
+        if (error.code === 'PGRST116') {
+          const user = await supabase.auth.getUser();
+          if (user.data.user) {
+            const displayName = user.data.user.user_metadata?.display_name || 
+                              user.data.user.email?.split('@')[0] || 'User';
+            const newProfile = await createProfile(userId, user.data.user.email!, displayName);
+            setProfile(newProfile);
+            return;
+          }
+        }
+        throw error;
+      }
+
+      console.log('Profile fetched successfully:', data);
       setProfile(data);
     } catch (error) {
       console.error('Error fetching profile:', error);
+      toast({
+        title: "Profile Error",
+        description: "Failed to load profile. Please try refreshing the page.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -182,18 +248,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    console.log('Setting up auth state listener...');
+    
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event);
+        console.log('Auth state changed:', event, session?.user?.id);
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          // Defer profile fetching to prevent deadlocks
+          // Delay profile fetching slightly to avoid potential race conditions
           setTimeout(() => {
             fetchProfile(session.user.id);
-          }, 0);
+          }, 100);
         } else {
           setProfile(null);
         }
@@ -204,6 +272,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session:', session?.user?.id);
       setSession(session);
       setUser(session?.user ?? null);
       

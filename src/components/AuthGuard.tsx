@@ -11,7 +11,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const { user, profile, session, loading } = useAuth();
 
   useEffect(() => {
-    // Set user as online when authenticated
+    // Set user as online when authenticated and profile exists
     if (user && profile && session) {
       const updateOnlineStatus = async () => {
         try {
@@ -51,6 +51,8 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     }
   }, [user, profile, session]);
 
+  console.log('AuthGuard state:', { loading, user: !!user, profile: !!profile });
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -72,6 +74,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Setting up your profile...</p>
+          <p className="text-sm text-gray-500 mt-2">This should only take a moment</p>
         </div>
       </div>
     );
