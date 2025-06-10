@@ -38,13 +38,10 @@ const HomePage = () => {
       const totalChats = chatMembers?.length || 0;
       const unreadMessages = chatMembers?.reduce((sum, member) => sum + (member.unread_count || 0), 0) || 0;
 
-      // Fetch call statistics
-      const { data: callLogs } = await supabase
-        .from('call_logs')
-        .select('id')
-        .or(`caller_id.eq.${user.id},receiver_id.eq.${user.id}`);
-
-      const totalCalls = callLogs?.length || 0;
+      // Get call logs from localStorage for now
+      const savedLogs = localStorage.getItem(`call_logs_${user.id}`);
+      const callLogs = savedLogs ? JSON.parse(savedLogs) : [];
+      const totalCalls = callLogs.length;
 
       // Fetch online users count
       const { data: onlineProfiles } = await supabase

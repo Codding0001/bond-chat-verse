@@ -8,11 +8,11 @@ interface AuthGuardProps {
 }
 
 const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, session, loading } = useAuth();
 
   useEffect(() => {
     // Set user as online when authenticated
-    if (user && profile) {
+    if (user && profile && session) {
       const updateOnlineStatus = async () => {
         try {
           await fetch('https://fvsqmmfmfhrpdodzltjy.supabase.co/rest/v1/profiles', {
@@ -20,7 +20,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
             headers: {
               'Content-Type': 'application/json',
               'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2c3FtbWZtZmhycGRvZHpsdGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkzODg2MzQsImV4cCI6MjA2NDk2NDYzNH0.S7l636TFCZICSBSr-sq-Pc2PbbYiEXb66mZFSkP1WrQ',
-              'Authorization': `Bearer ${user.access_token}`,
+              'Authorization': `Bearer ${session.access_token}`,
               'Prefer': 'return=minimal'
             },
             body: JSON.stringify({
@@ -49,7 +49,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
         window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     }
-  }, [user, profile]);
+  }, [user, profile, session]);
 
   if (loading) {
     return (

@@ -7,18 +7,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Phone, Video, PhoneCall, VideoOff, PhoneOff } from 'lucide-react';
 
-interface CallLog {
-  id: string;
-  caller_id: string;
-  receiver_id: string;
-  call_type: 'voice' | 'video';
-  call_status: 'answered' | 'missed' | 'busy' | 'failed';
-  duration: number;
-  created_at: string;
-  caller?: { display_name: string };
-  receiver?: { display_name: string };
-}
-
 interface Contact {
   id: string;
   display_name: string;
@@ -26,11 +14,22 @@ interface Contact {
   is_online: boolean;
 }
 
+interface SimpleCallLog {
+  id: string;
+  contact_name: string;
+  contact_id: string;
+  call_type: 'voice' | 'video';
+  call_status: 'answered' | 'missed';
+  duration: number;
+  time: string;
+  is_outgoing: boolean;
+}
+
 const CallsPage = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeCall, setActiveCall] = useState<string | null>(null);
-  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
+  const [callLogs, setCallLogs] = useState<SimpleCallLog[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [callStartTime, setCallStartTime] = useState<Date | null>(null);
@@ -38,8 +37,12 @@ const CallsPage = () => {
 
   useEffect(() => {
     if (user) {
-      fetchCallLogs();
       fetchContacts();
+      // Load call logs from localStorage for now
+      const savedLogs = localStorage.getItem(`call_logs_${user.id}`);
+      if (savedLogs) {
+        setCallLogs(JSON.parse(savedLogs));
+      }
     }
   }, [user]);
 
@@ -55,28 +58,6 @@ const CallsPage = () => {
       if (interval) clearInterval(interval);
     };
   }, [activeCall, callStartTime]);
-
-  const fetchCallLogs = async () => {
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('call_logs')
-        .select(`
-          *,
-          caller:caller_id(display_name),
-          receiver:receiver_id(display_name)
-        `)
-        .or(`caller_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-      setCallLogs(data || []);
-    } catch (error) {
-      console.error('Error fetching call logs:', error);
-    }
-  };
 
   const fetchContacts = async () => {
     if (!user) return;
@@ -133,30 +114,32 @@ const CallsPage = () => {
     }
   };
 
+  const saveCallLog = (log: SimpleCallLog) => {
+    if (!user) return;
+    
+    const currentLogs = [...callLogs, log];
+    setCallLogs(currentLogs);
+    localStorage.setItem(`call_logs_${user.id}`, JSON.stringify(currentLogs));
+  };
+
   const startCall = async (contactId: string, type: 'voice' | 'video') => {
     if (!user) return;
 
     const hasPermission = await requestMediaPermission(type === 'video' ? 'video' : 'audio');
     if (!hasPermission) return;
 
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return;
+
     try {
-      // Create call log
-      const { data: callLog, error } = await supabase
-        .from('call_logs')
-        .insert({
-          caller_id: user.id,
-          receiver_id: contactId,
-          call_type: type,
-          call_status: 'missed', // Will be updated when call ends
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setActiveCall(`${type}-${contactId}-${callLog.id}`);
+      setActiveCall(`${type}-${contactId}-${Date.now()}`);
       setCallStartTime(new Date());
       setCallDuration(0);
+
+      toast({
+        title: "Call Started",
+        description: `Calling ${contact.display_name}...`,
+      });
 
       // Simulate call ending after some time for demo
       setTimeout(() => {
@@ -173,27 +156,37 @@ const CallsPage = () => {
     }
   };
 
-  const endCall = async (status: 'answered' | 'missed' | 'busy' = 'answered') => {
+  const endCall = async (status: 'answered' | 'missed' = 'answered') => {
     if (!activeCall || !callStartTime) return;
 
     try {
-      const callId = activeCall.split('-')[2];
+      const [callType, contactId] = activeCall.split('-');
+      const contact = contacts.find(c => c.id === contactId);
       const duration = Math.floor((Date.now() - callStartTime.getTime()) / 1000);
 
-      // Update call log
-      await supabase
-        .from('call_logs')
-        .update({
+      if (contact) {
+        const callLog: SimpleCallLog = {
+          id: Date.now().toString(),
+          contact_name: contact.display_name,
+          contact_id: contactId,
+          call_type: callType as 'voice' | 'video',
           call_status: status,
           duration,
-          ended_at: new Date().toISOString()
-        })
-        .eq('id', callId);
+          time: new Date().toISOString(),
+          is_outgoing: true
+        };
+
+        saveCallLog(callLog);
+      }
 
       setActiveCall(null);
       setCallStartTime(null);
       setCallDuration(0);
-      fetchCallLogs(); // Refresh call logs
+
+      toast({
+        title: "Call Ended",
+        description: `Call duration: ${formatDuration(duration)}`,
+      });
 
     } catch (error) {
       console.error('Error ending call:', error);
@@ -336,41 +329,33 @@ const CallsPage = () => {
           <CardContent>
             {callLogs.length > 0 ? (
               <div className="space-y-3">
-                {callLogs.map((call) => {
-                  const isOutgoing = call.caller_id === user?.id;
-                  const otherPerson = isOutgoing ? call.receiver : call.caller;
-                  
-                  return (
-                    <div key={call.id} className="flex items-center space-x-3 p-3 border rounded-lg">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        call.call_status === 'missed' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
-                      }`}>
-                        {call.call_type === 'video' ? (
-                          <Video className="w-5 h-5" />
-                        ) : (
-                          <PhoneCall className="w-5 h-5" />
-                        )}
-                      </div>
-                      
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">
-                          {otherPerson?.display_name || 'Unknown User'}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          {isOutgoing ? 'Outgoing' : 'Incoming'} • {
-                            call.call_status === 'missed' ? 'Missed call' : 
-                            call.call_status === 'answered' ? `Duration: ${formatDuration(call.duration)}` :
-                            call.call_status
-                          }
-                        </p>
-                      </div>
-                      
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400">{formatCallTime(call.created_at)}</p>
-                      </div>
+                {callLogs.slice(-10).reverse().map((call) => (
+                  <div key={call.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      call.call_status === 'missed' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
+                    }`}>
+                      {call.call_type === 'video' ? (
+                        <Video className="w-5 h-5" />
+                      ) : (
+                        <PhoneCall className="w-5 h-5" />
+                      )}
                     </div>
-                  );
-                })}
+                    
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{call.contact_name}</p>
+                      <p className="text-xs text-gray-600">
+                        {call.is_outgoing ? 'Outgoing' : 'Incoming'} • {
+                          call.call_status === 'missed' ? 'Missed call' : 
+                          `Duration: ${formatDuration(call.duration)}`
+                        }
+                      </p>
+                    </div>
+                    
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">{formatCallTime(call.time)}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="text-gray-500 text-center py-4">No call history</p>
