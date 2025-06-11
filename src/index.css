@@ -100,32 +100,6 @@
   html {
     @apply bg-background;
   }
-
-  /* Ensure all components use design tokens */
-  .dark body {
-    @apply bg-background text-foreground;
-  }
-
-  /* Dark mode fixes */
-  .dark .bg-muted {
-    @apply bg-muted;
-  }
-
-  .dark .text-muted-foreground {
-    @apply text-muted-foreground;
-  }
-
-  .dark .bg-card {
-    @apply bg-card;
-  }
-
-  .dark .text-foreground {
-    @apply text-foreground;
-  }
-
-  .dark .border-border {
-    @apply border-border;
-  }
 }
 
 /* Custom animations for gifts */
