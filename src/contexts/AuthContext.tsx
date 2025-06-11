@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -119,7 +120,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       console.log('Profile fetched successfully:', data);
-      setProfile(data);
+      // Ensure all required fields are present with defaults
+      const profileData = {
+        ...data,
+        has_ultra_badge: data.has_ultra_badge || false,
+        has_legendary_badge: data.has_legendary_badge || false,
+        legendary_badge_color: data.legendary_badge_color || 'gold'
+      };
+      setProfile(profileData);
     } catch (error) {
       console.error('Error fetching profile:', error);
       toast({
