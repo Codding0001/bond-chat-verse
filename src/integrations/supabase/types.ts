@@ -296,6 +296,7 @@ export type Database = {
           display_name: string
           email: string
           has_legendary_badge: boolean | null
+          has_ultra_badge: boolean | null
           id: string
           is_admin: boolean | null
           is_online: boolean | null
@@ -311,6 +312,7 @@ export type Database = {
           display_name: string
           email: string
           has_legendary_badge?: boolean | null
+          has_ultra_badge?: boolean | null
           id: string
           is_admin?: boolean | null
           is_online?: boolean | null
@@ -326,6 +328,7 @@ export type Database = {
           display_name?: string
           email?: string
           has_legendary_badge?: boolean | null
+          has_ultra_badge?: boolean | null
           id?: string
           is_admin?: boolean | null
           is_online?: boolean | null

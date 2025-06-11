@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,34 +8,89 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Gift, Search, Send, Crown, Zap, Coins, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+
+interface UserProfile {
+  id: string;
+  display_name: string;
+  user_number: string;
+  profile_picture: string;
+  has_legendary_badge: boolean;
+  has_ultra_badge: boolean;
+}
+
+interface SentGift {
+  id: string;
+  gift_emoji: string;
+  gift_name: string;
+  price: number;
+  receiver: {
+    display_name: string;
+  };
+}
 
 const GiftsPage = () => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [selectedGift, setSelectedGift] = useState<any>(null);
   const [giftQuantity, setGiftQuantity] = useState(1);
-  const [myGifts, setMyGifts] = useState<any[]>([]);
+  const [myGifts, setMyGifts] = useState<SentGift[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchUsers();
+    if (searchQuery.trim()) {
+      fetchUsers();
+    } else {
+      setUsers([]);
+    }
+  }, [searchQuery, user]);
+
+  useEffect(() => {
     fetchMyGifts();
   }, [user]);
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('profiles')
-        .select('*')
-        .neq('id', user?.id)
-        .ilike('display_name', `%${searchQuery}%`)
-        .limit(5);
+        .select('id, display_name, user_number, profile_picture, has_legendary_badge, has_ultra_badge');
+
+      // Check if searching by user number (starts with #)
+      if (searchQuery.startsWith('#')) {
+        const userNumber = searchQuery.substring(1);
+        query = query.eq('user_number', userNumber);
+      } else {
+        // Search by display name (case insensitive)
+        query = query.ilike('display_name', `%${searchQuery}%`);
+      }
+
+      const { data, error } = await query.limit(10);
 
       if (error) throw error;
-      setUsers(data || []);
+
+      // Include current user in results for self-gifting
+      let filteredData = data || [];
+      if (profile && !filteredData.find(u => u.id === profile.id)) {
+        const currentUserMatches = searchQuery.startsWith('#') 
+          ? profile.user_number === searchQuery.substring(1)
+          : profile.display_name.toLowerCase().includes(searchQuery.toLowerCase());
+        
+        if (currentUserMatches) {
+          filteredData = [{
+            id: profile.id,
+            display_name: profile.display_name,
+            user_number: profile.user_number,
+            profile_picture: profile.profile_picture,
+            has_legendary_badge: profile.has_legendary_badge,
+            has_ultra_badge: profile.has_ultra_badge
+          }, ...filteredData];
+        }
+      }
+
+      setUsers(filteredData);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast({
@@ -51,10 +107,16 @@ const GiftsPage = () => {
     try {
       const { data, error } = await supabase
         .from('gifts')
-        .select('*')
+        .select(`
+          id,
+          gift_emoji,
+          gift_name,
+          price,
+          receiver:receiver_id(display_name)
+        `)
         .eq('sender_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(6);
 
       if (error) throw error;
       setMyGifts(data || []);
@@ -70,15 +132,13 @@ const GiftsPage = () => {
         .from('gifts')
         .select('*')
         .eq('receiver_id', userId)
-        .eq('is_legendary', true)
-        .eq('can_exchange', true);
+        .eq('is_legendary', true);
 
       const { data: ultraGifts } = await supabase
         .from('gifts')
         .select('*')
         .eq('receiver_id', userId)
-        .eq('gift_type', 'ultra')
-        .eq('can_exchange', true);
+        .eq('gift_type', 'ultra');
 
       const hasLegendary = (legendaryGifts?.length || 0) > 0;
       const hasUltra = (ultraGifts?.length || 0) > 0;
@@ -180,59 +240,6 @@ const GiftsPage = () => {
     }
   };
 
-  const exchangeGift = async (giftId: string, giftPrice: number, giftType: string) => {
-    if (!user) return;
-
-    setLoading(true);
-    try {
-      // Mark gift as exchanged
-      await supabase
-        .from('gifts')
-        .update({ can_exchange: false })
-        .eq('id', giftId);
-
-      // Add coins to user's balance (50% of gift value)
-      const exchangeValue = Math.floor(giftPrice * 0.5);
-      const newBalance = (profile?.coin_balance || 0) + exchangeValue;
-      
-      await supabase
-        .from('profiles')
-        .update({ coin_balance: newBalance })
-        .eq('id', user.id);
-
-      // Update badges after exchange
-      await checkAndUpdateBadges(user.id);
-
-      // Record transaction
-      await supabase
-        .from('transactions')
-        .insert({
-          to_user_id: user.id,
-          amount: exchangeValue,
-          transaction_type: 'gift_exchange',
-          description: `Exchanged gift for ${exchangeValue} coins`
-        });
-
-      toast({
-        title: "Gift exchanged! 🪙",
-        description: `You received ${exchangeValue} coins`,
-      });
-
-      fetchMyGifts();
-      // Refresh to show new balance and badges
-      window.location.reload();
-    } catch (error) {
-      console.error('Error exchanging gift:', error);
-      toast({
-        title: "Failed to exchange gift",
-        description: "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const availableGifts = [
     // Common gifts (100-500 coins)
     { id: 'gift_heart', name: 'Heart', emoji: '❤️', price: 100, type: 'common', description: 'A small token of affection' },
@@ -250,7 +257,7 @@ const GiftsPage = () => {
     { id: 'rare_book', name: 'Book', emoji: '📚', price: 3000, type: 'rare', description: 'A gift of knowledge and wisdom' },
     { id: 'rare_ticket', name: 'Ticket', emoji: '🎫', price: 3500, type: 'rare', description: 'An invitation to adventure' },
 
-    // Legendary gifts (10k+ coins)
+    // Legendary gifts (10k+ coins) - with golden background
     { 
       id: 'legendary_dragon', 
       name: 'Legendary Dragon', 
@@ -300,7 +307,7 @@ const GiftsPage = () => {
       description: 'A gift of untold riches'
     },
 
-    // Ultra gifts (500k+ coins)
+    // Ultra gifts (500k+ coins) - with red glowing background
     { 
       id: 'ultra_diamond', 
       name: 'Ultra Diamond', 
@@ -353,12 +360,9 @@ const GiftsPage = () => {
           <CardContent className="space-y-4">
             <Input
               type="text"
-              placeholder="Search for a user"
+              placeholder="Search by name or #user_number"
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                fetchUsers();
-              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
             
             {users.length > 0 ? (
@@ -366,29 +370,43 @@ const GiftsPage = () => {
                 {users.map((userItem) => (
                   <button
                     key={userItem.id}
-                    className={`w-full text-left p-3 rounded-lg hover:bg-muted ${
+                    className={`w-full text-left p-3 rounded-lg hover:bg-muted transition-colors ${
                       selectedUser?.id === userItem.id ? 'bg-secondary' : ''
                     }`}
                     onClick={() => setSelectedUser(userItem)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center">
-                        <User className="w-4 h-4 mr-2" />
-                        {userItem.display_name}
-                        {userItem.has_legendary_badge && (
-                          <Crown className="w-4 h-4 ml-2 text-yellow-600" />
-                        )}
-                        {userItem.has_ultra_badge && (
-                          <Zap className="w-4 h-4 ml-2 text-red-600" />
-                        )}
+                        <Avatar className="w-8 h-8 mr-3">
+                          <AvatarImage src={userItem.profile_picture} alt={userItem.display_name} />
+                          <AvatarFallback>
+                            <User className="w-4 h-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="flex items-center">
+                            <span className="font-medium">{userItem.display_name}</span>
+                            {userItem.has_legendary_badge && (
+                              <Crown className="w-4 h-4 ml-2 text-yellow-600" />
+                            )}
+                            {userItem.has_ultra_badge && (
+                              <Zap className="w-4 h-4 ml-2 text-red-600" />
+                            )}
+                            {userItem.id === user?.id && (
+                              <Badge variant="outline" className="ml-2 text-xs">You</Badge>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground">#{userItem.user_number}</span>
+                        </div>
                       </div>
-                      <span className="text-xs text-muted-foreground">#{userItem.user_number}</span>
                     </div>
                   </button>
                 ))}
               </div>
+            ) : searchQuery.trim() ? (
+              <p className="text-muted-foreground text-center py-4">No users found</p>
             ) : (
-              <p className="text-muted-foreground">No users found</p>
+              <p className="text-muted-foreground text-center py-4">Start typing to search for users</p>
             )}
           </CardContent>
         </Card>
@@ -406,8 +424,14 @@ const GiftsPage = () => {
               {availableGifts.map((gift) => (
                 <div
                   key={gift.id}
-                  className={`text-center p-3 rounded-lg hover:shadow-md transition-shadow cursor-pointer relative ${
-                    selectedGift?.id === gift.id ? 'bg-secondary' : 'bg-muted'
+                  className={`text-center p-3 rounded-lg hover:shadow-md transition-all cursor-pointer relative ${
+                    selectedGift?.id === gift.id ? 'ring-2 ring-primary' : ''
+                  } ${
+                    gift.type === 'legendary'
+                      ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900/30 dark:to-yellow-800/30 border-2 border-yellow-400'
+                      : gift.type === 'ultra'
+                      ? 'bg-gradient-to-br from-red-100 to-red-200 dark:from-red-900/30 dark:to-red-800/30 border-2 border-red-500 shadow-lg shadow-red-500/25'
+                      : 'bg-muted hover:bg-muted/80'
                   }`}
                   onClick={() => setSelectedGift(gift)}
                 >
@@ -418,15 +442,21 @@ const GiftsPage = () => {
                   )}
                   {gift.type === 'ultra' && (
                     <div className="absolute -top-1 -right-1 text-xs">
-                      <Zap className="w-3 h-3 text-red-600" />
+                      <Zap className="w-3 h-3 text-red-600 animate-pulse" />
                     </div>
                   )}
-                  <div className="text-2xl mb-1">{gift.emoji}</div>
+                  <div 
+                    className={`text-2xl mb-1 ${
+                      gift.type === 'legendary' ? 'animate-pulse' : gift.type === 'ultra' ? 'animate-bounce' : ''
+                    }`}
+                  >
+                    {gift.emoji}
+                  </div>
                   <p className="text-sm font-medium">{gift.name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{gift.description}</p>
-                  <div className="mt-2">
-                    <Coins className="w-4 h-4 inline-block mr-1" />
-                    {gift.price.toLocaleString()}
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{gift.description}</p>
+                  <div className="mt-2 flex items-center justify-center">
+                    <Coins className="w-3 h-3 mr-1" />
+                    <span className="text-xs font-bold">{gift.price.toLocaleString()}</span>
                   </div>
                 </div>
               ))}
@@ -449,10 +479,22 @@ const GiftsPage = () => {
                 type="number"
                 placeholder="Enter quantity"
                 value={giftQuantity}
-                onChange={(e) => setGiftQuantity(parseInt(e.target.value))}
+                onChange={(e) => setGiftQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                 min="1"
               />
             </div>
+            
+            {selectedUser && selectedGift && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm">
+                  <strong>Total Cost:</strong> {(selectedGift.price * giftQuantity).toLocaleString()} coins
+                </p>
+                <p className="text-sm">
+                  <strong>Sending to:</strong> {selectedUser.display_name}
+                  {selectedUser.id === user?.id && ' (yourself)'}
+                </p>
+              </div>
+            )}
             
             <Button
               onClick={sendGift}
@@ -461,12 +503,14 @@ const GiftsPage = () => {
             >
               {loading
                 ? 'Sending...'
-                : `Send ${giftQuantity} ${selectedGift?.name}(s) to ${selectedUser?.display_name}`}
+                : selectedUser && selectedGift
+                ? `Send ${giftQuantity}x ${selectedGift.name} to ${selectedUser.display_name}`
+                : 'Select user and gift to send'}
             </Button>
           </CardContent>
         </Card>
 
-        {/* My Gifts */}
+        {/* My Recent Gifts */}
         <Card>
           <CardHeader>
             <CardTitle>My Recent Gifts</CardTitle>
@@ -479,42 +523,17 @@ const GiftsPage = () => {
                     <div className="text-2xl mb-1">{gift.gift_emoji}</div>
                     <p className="text-sm font-medium">{gift.gift_name}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      To {gift.receiver_id}
+                      To: {gift.receiver?.display_name || 'Unknown'}
                     </p>
+                    <div className="mt-1 flex items-center justify-center">
+                      <Coins className="w-3 h-3 mr-1" />
+                      <span className="text-xs">{gift.price}</span>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-muted-foreground text-center py-4">No gifts sent yet</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Exchange Gifts */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Exchange Gifts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {/* List of received gifts that can be exchanged */}
-            {profile && (
-              availableGifts.map((gift) => (
-                <div key={gift.id} className="flex items-center justify-between p-3 rounded-lg bg-muted mb-2">
-                  <div>
-                    <div className="text-2xl">{gift.emoji}</div>
-                    <p className="text-sm font-medium">{gift.name}</p>
-                    <p className="text-xs text-muted-foreground">Value: {gift.price} coins</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => exchangeGift(gift.id, gift.price, gift.type)}
-                    disabled={loading}
-                  >
-                    Exchange
-                  </Button>
-                </div>
-              ))
             )}
           </CardContent>
         </Card>

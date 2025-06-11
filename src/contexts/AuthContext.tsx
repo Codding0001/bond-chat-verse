@@ -112,10 +112,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                               user.data.user.email?.split('@')[0] || 'User';
             const newProfile = await createProfile(userId, user.data.user.email!, displayName);
             const profileData: Profile = {
-              ...newProfile,
-              has_ultra_badge: newProfile.has_ultra_badge ?? false,
+              id: newProfile.id,
+              email: newProfile.email,
+              display_name: newProfile.display_name,
+              user_number: newProfile.user_number,
+              bio: newProfile.bio,
+              profile_picture: newProfile.profile_picture,
+              coin_balance: newProfile.coin_balance,
+              is_online: newProfile.is_online,
+              is_admin: newProfile.is_admin,
               has_legendary_badge: newProfile.has_legendary_badge ?? false,
-              legendary_badge_color: newProfile.legendary_badge_color || 'gold'
+              legendary_badge_color: newProfile.legendary_badge_color || 'gold',
+              has_ultra_badge: newProfile.has_ultra_badge ?? false
             };
             setProfile(profileData);
             return;
@@ -127,10 +135,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Profile fetched successfully:', data);
       // Ensure all required fields are present with defaults
       const profileData: Profile = {
-        ...data,
-        has_ultra_badge: data.has_ultra_badge ?? false,
+        id: data.id,
+        email: data.email,
+        display_name: data.display_name,
+        user_number: data.user_number,
+        bio: data.bio,
+        profile_picture: data.profile_picture,
+        coin_balance: data.coin_balance,
+        is_online: data.is_online,
+        is_admin: data.is_admin,
         has_legendary_badge: data.has_legendary_badge ?? false,
-        legendary_badge_color: data.legendary_badge_color || 'gold'
+        legendary_badge_color: data.legendary_badge_color || 'gold',
+        has_ultra_badge: data.has_ultra_badge ?? false
       };
       setProfile(profileData);
     } catch (error) {
