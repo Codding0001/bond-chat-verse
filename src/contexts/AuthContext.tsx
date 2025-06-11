@@ -121,10 +121,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       console.log('Profile fetched successfully:', data);
       // Ensure all required fields are present with defaults
-      const profileData = {
+      const profileData: Profile = {
         ...data,
-        has_ultra_badge: data.has_ultra_badge || false,
-        has_legendary_badge: data.has_legendary_badge || false,
+        has_ultra_badge: data.has_ultra_badge ?? false,
+        has_legendary_badge: data.has_legendary_badge ?? false,
         legendary_badge_color: data.legendary_badge_color || 'gold'
       };
       setProfile(profileData);

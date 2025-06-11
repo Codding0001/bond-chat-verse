@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Gift, Search, Send, Crown, Zap, Coins } from 'lucide-react';
+import { Gift, Search, Send, Crown, Zap, Coins, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 const GiftsPage = () => {
@@ -128,7 +128,7 @@ const GiftsPage = () => {
             receiver_id: selectedUser.id,
             gift_emoji: selectedGift.emoji,
             gift_name: selectedGift.name,
-            gift_value: selectedGift.price,
+            price: selectedGift.price,
             gift_type: selectedGift.type,
             is_legendary: selectedGift.type === 'legendary',
             can_exchange: true
@@ -180,7 +180,7 @@ const GiftsPage = () => {
     }
   };
 
-  const exchangeGift = async (giftId: string, giftValue: number, giftType: string) => {
+  const exchangeGift = async (giftId: string, giftPrice: number, giftType: string) => {
     if (!user) return;
 
     setLoading(true);
@@ -192,7 +192,7 @@ const GiftsPage = () => {
         .eq('id', giftId);
 
       // Add coins to user's balance (50% of gift value)
-      const exchangeValue = Math.floor(giftValue * 0.5);
+      const exchangeValue = Math.floor(giftPrice * 0.5);
       const newBalance = (profile?.coin_balance || 0) + exchangeValue;
       
       await supabase
@@ -375,6 +375,12 @@ const GiftsPage = () => {
                       <div className="flex items-center">
                         <User className="w-4 h-4 mr-2" />
                         {userItem.display_name}
+                        {userItem.has_legendary_badge && (
+                          <Crown className="w-4 h-4 ml-2 text-yellow-600" />
+                        )}
+                        {userItem.has_ultra_badge && (
+                          <Zap className="w-4 h-4 ml-2 text-red-600" />
+                        )}
                       </div>
                       <span className="text-xs text-muted-foreground">#{userItem.user_number}</span>
                     </div>
@@ -493,7 +499,7 @@ const GiftsPage = () => {
             {/* List of received gifts that can be exchanged */}
             {profile && (
               availableGifts.map((gift) => (
-                <div key={gift.id} className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                <div key={gift.id} className="flex items-center justify-between p-3 rounded-lg bg-muted mb-2">
                   <div>
                     <div className="text-2xl">{gift.emoji}</div>
                     <p className="text-sm font-medium">{gift.name}</p>
