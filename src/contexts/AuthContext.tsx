@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -112,7 +111,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const displayName = user.data.user.user_metadata?.display_name || 
                               user.data.user.email?.split('@')[0] || 'User';
             const newProfile = await createProfile(userId, user.data.user.email!, displayName);
-            setProfile(newProfile);
+            const profileData: Profile = {
+              ...newProfile,
+              has_ultra_badge: newProfile.has_ultra_badge ?? false,
+              has_legendary_badge: newProfile.has_legendary_badge ?? false,
+              legendary_badge_color: newProfile.legendary_badge_color || 'gold'
+            };
+            setProfile(profileData);
             return;
           }
         }

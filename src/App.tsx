@@ -23,8 +23,8 @@ import NotFound from '@/pages/NotFound';
 
 function App() {
   return (
-    <SettingsProvider>
-      <AuthProvider>
+    <AuthProvider>
+      <SettingsProvider>
         <Router>
           <div className="min-h-screen bg-background">
             <AuthGuard>
@@ -48,8 +48,8 @@ function App() {
             <Toaster />
           </div>
         </Router>
-      </AuthProvider>
-    </SettingsProvider>
+      </SettingsProvider>
+    </AuthProvider>
   );
 }
 
