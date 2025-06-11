@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -14,6 +13,8 @@ interface Profile {
   coin_balance: number;
   is_online: boolean;
   is_admin: boolean;
+  has_legendary_badge: boolean;
+  legendary_badge_color: string;
 }
 
 interface AuthContextType {
@@ -63,7 +64,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           bio: 'Hello there! I am using ChatApp.',
           coin_balance: 100,
           is_online: true,
-          is_admin: false
+          is_admin: false,
+          has_legendary_badge: false,
+          legendary_badge_color: 'gold'
         })
         .select()
         .single();
