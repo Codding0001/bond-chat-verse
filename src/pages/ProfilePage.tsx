@@ -6,9 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Edit, LogOut, Gift, Settings, Coins, Crown } from 'lucide-react';
+import { User, Edit, LogOut, Gift, Settings, Coins, Crown, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import ProfilePictureUpload from '@/components/ProfilePictureUpload';
+import { Badge } from '@/components/ui/badge';
 
 const ProfilePage = () => {
   const { user, profile, logout, updateProfile } = useAuth();
@@ -79,10 +79,16 @@ const ProfilePage = () => {
           <h1 className="text-xl font-bold flex items-center justify-center">
             {profile.display_name}
             {profile.has_legendary_badge && (
-              <div className="ml-2 px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full text-xs font-bold text-black animate-pulse-soft flex items-center">
+              <Badge className="ml-2 bg-yellow-500 text-black animate-pulse">
                 <Crown className="w-3 h-3 mr-1" />
                 LEGENDARY
-              </div>
+              </Badge>
+            )}
+            {profile.has_ultra_badge && (
+              <Badge className="ml-2 bg-red-500 text-white animate-pulse">
+                <Zap className="w-3 h-3 mr-1" />
+                ULTRA
+              </Badge>
             )}
           </h1>
           <p className="text-purple-100">#{profile.user_number}</p>
@@ -94,16 +100,6 @@ const ProfilePage = () => {
       </div>
 
       <div className="p-4 space-y-6">
-        {/* Profile Picture Upload */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile Picture</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ProfilePictureUpload />
-          </CardContent>
-        </Card>
-
         {/* Profile Info */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -190,6 +186,8 @@ const ProfilePage = () => {
                     className={`text-center p-3 rounded-lg relative ${
                       gift.is_legendary
                         ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900 dark:to-yellow-800'
+                        : gift.gift_type === 'ultra'
+                        ? 'bg-gradient-to-br from-red-100 to-red-200 dark:from-red-900 dark:to-red-800 animate-pulse'
                         : 'bg-muted'
                     }`}
                   >
@@ -198,9 +196,14 @@ const ProfilePage = () => {
                         <Crown className="w-3 h-3 text-yellow-600" />
                       </div>
                     )}
+                    {gift.gift_type === 'ultra' && (
+                      <div className="absolute -top-1 -right-1 text-xs">
+                        <Zap className="w-3 h-3 text-red-600" />
+                      </div>
+                    )}
                     <div 
                       className={`text-2xl mb-1 ${
-                        gift.is_legendary ? 'animate-bounce-gift' : ''
+                        gift.is_legendary ? 'animate-bounce-gift' : gift.gift_type === 'ultra' ? 'animate-bounce' : ''
                       }`}
                     >
                       {gift.gift_emoji}
@@ -234,7 +237,10 @@ const ProfilePage = () => {
                 <span className="text-muted-foreground">›</span>
               </button>
               
-              <button className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between">
+              <button 
+                className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between"
+                onClick={() => navigate('/privacy')}
+              >
                 <span>Privacy Settings</span>
                 <span className="text-muted-foreground">›</span>
               </button>

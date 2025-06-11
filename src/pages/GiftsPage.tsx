@@ -7,78 +7,53 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Gift, Coins, Search, Star, Crown, Flame } from 'lucide-react';
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '@/components/ui/carousel';
+import { Search, Gift, Crown, Zap, Coins } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+
+interface GiftType {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  type: 'normal' | 'legendary' | 'ultra';
+  description: string;
+}
+
+const giftTypes: GiftType[] = [
+  { id: '1', name: 'Rose', emoji: '🌹', price: 10, type: 'normal', description: 'A beautiful rose' },
+  { id: '2', name: 'Heart', emoji: '❤️', price: 25, type: 'normal', description: 'Love and affection' },
+  { id: '3', name: 'Diamond', emoji: '💎', price: 100, type: 'normal', description: 'Precious and rare' },
+  { id: '4', name: 'Crown', emoji: '👑', price: 50000, type: 'legendary', description: 'Royal treatment - Grants Legendary Badge!' },
+  { id: '5', name: 'Golden Star', emoji: '⭐', price: 75000, type: 'legendary', description: 'Shining bright - Grants Legendary Badge!' },
+  { id: '6', name: 'Fire Phoenix', emoji: '🔥', price: 500000, type: 'ultra', description: 'Ultimate power - Grants Ultra Badge!' },
+  { id: '7', name: 'Lightning Bolt', emoji: '⚡', price: 750000, type: 'ultra', description: 'Electric energy - Grants Ultra Badge!' }
+];
 
 const GiftsPage = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, updateCoins } = useAuth();
   const { toast } = useToast();
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedGift, setSelectedGift] = useState<GiftType | null>(null);
   const [searchUser, setSearchUser] = useState('');
-  const [users, setUsers] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
+  const [quantity, setQuantity] = useState(1);
+  const [searchingUsers, setSearchingUsers] = useState(false);
   const [receivedGifts, setReceivedGifts] = useState<any[]>([]);
-  const [showGallery, setShowGallery] = useState(false);
-  const [galleryUser, setGalleryUser] = useState<any>(null);
-  const [galleryGifts, setGalleryGifts] = useState<any[]>([]);
-
-  const giftCategories = [
-    {
-      name: "Basic Gifts",
-      gifts: [
-        { emoji: "🌹", name: "Rose", price: 10, type: "flower" },
-        { emoji: "💎", name: "Diamond", price: 50, type: "jewelry" },
-        { emoji: "🎁", name: "Gift Box", price: 25, type: "surprise" },
-        { emoji: "🍰", name: "Cake", price: 15, type: "food" },
-        { emoji: "🌟", name: "Star", price: 30, type: "celestial" },
-      ]
-    },
-    {
-      name: "Premium Gifts",
-      gifts: [
-        { emoji: "💝", name: "Love Gift", price: 100, type: "love" },
-        { emoji: "👑", name: "Crown", price: 200, type: "royal" },
-        { emoji: "🚗", name: "Car", price: 500, type: "luxury" },
-        { emoji: "🏠", name: "House", price: 1000, type: "property" },
-        { emoji: "✈️", name: "Airplane", price: 2000, type: "travel" },
-      ]
-    },
-    {
-      name: "Legendary Gifts",
-      gifts: [
-        { emoji: "👽", name: "Dancing Alien", price: 100000, type: "legendary", isLegendary: true, animation: "bounce" },
-        { emoji: "🦁", name: "Golden Lion", price: 150000, type: "legendary", isLegendary: true, animation: "pulse" },
-        { emoji: "🐉", name: "Mystic Dragon", price: 200000, type: "legendary", isLegendary: true, animation: "bounce" },
-        { emoji: "🦄", name: "Rainbow Unicorn", price: 250000, type: "legendary", isLegendary: true, animation: "pulse" },
-        { emoji: "👑", name: "Emperor Crown", price: 300000, type: "legendary", isLegendary: true, animation: "bounce" },
-      ]
-    }
-  ];
 
   useEffect(() => {
-    fetchReceivedGifts();
-    if (searchUser.length >= 2) {
+    if (user) {
+      fetchReceivedGifts();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (searchUser.length >= 3) {
       searchUsers();
     } else {
-      setUsers([]);
+      setSearchResults([]);
     }
   }, [searchUser]);
-
-  const searchUsers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, display_name, user_number, is_online, has_legendary_badge')
-        .or(`display_name.ilike.%${searchUser}%,user_number.ilike.%${searchUser}%`)
-        .limit(10);
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error searching users:', error);
-    }
-  };
 
   const fetchReceivedGifts = async () => {
     if (!user) return;
@@ -88,7 +63,7 @@ const GiftsPage = () => {
         .from('gifts')
         .select(`
           *,
-          sender:sender_id(display_name, has_legendary_badge)
+          sender:sender_id(display_name, profile_picture)
         `)
         .eq('receiver_id', user.id)
         .order('created_at', { ascending: false });
@@ -100,209 +75,316 @@ const GiftsPage = () => {
     }
   };
 
-  const sendGift = async (gift: any) => {
-    if (!selectedUser || !user) {
-      toast({
-        title: "Select a recipient",
-        description: "Please select someone to send the gift to.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const searchUsers = async () => {
+    if (!searchUser || searchUser.length < 3) return;
+    
+    setSearchingUsers(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, display_name, user_number, is_online, profile_picture, has_legendary_badge, has_ultra_badge')
+        .neq('id', user?.id)
+        .or(`display_name.ilike.%${searchUser}%,user_number.ilike.%${searchUser}%`)
+        .limit(10);
 
-    if ((profile?.coin_balance || 0) < gift.price) {
+      if (error) throw error;
+      setSearchResults(data || []);
+    } catch (error) {
+      console.error('Error searching users:', error);
+      setSearchResults([]);
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  const sendGift = async () => {
+    if (!selectedGift || !selectedUser || !user || !profile) return;
+
+    const totalCost = selectedGift.price * quantity;
+    
+    if (profile.coin_balance < totalCost) {
       toast({
         title: "Insufficient coins",
-        description: "You don't have enough coins for this gift.",
+        description: `You need ${totalCost} coins but only have ${profile.coin_balance}.`,
         variant: "destructive",
       });
       return;
     }
 
-    setSending(true);
     try {
-      // Deduct coins from sender
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ coin_balance: (profile?.coin_balance || 0) - gift.price })
-        .eq('id', user.id);
+      // Send multiple gifts based on quantity
+      const gifts = Array.from({ length: quantity }, () => ({
+        sender_id: user.id,
+        receiver_id: selectedUser.id,
+        gift_name: selectedGift.name,
+        gift_emoji: selectedGift.emoji,
+        gift_type: selectedGift.type,
+        price: selectedGift.price,
+        message: message || null,
+        is_legendary: selectedGift.type === 'legendary',
+        can_exchange: true
+      }));
 
-      if (updateError) throw updateError;
-
-      // Send gift
       const { error: giftError } = await supabase
         .from('gifts')
-        .insert({
-          sender_id: user.id,
-          receiver_id: selectedUser.id,
-          gift_name: gift.name,
-          gift_emoji: gift.emoji,
-          gift_type: gift.type,
-          price: gift.price,
-          message: message || null,
-          is_legendary: gift.isLegendary || false,
-          can_exchange: true
-        });
+        .insert(gifts);
 
       if (giftError) throw giftError;
 
-      // If legendary gift, give sender legendary badge
-      if (gift.isLegendary) {
+      // Deduct coins from sender
+      await updateCoins(-totalCost);
+
+      // If legendary or ultra gift, update receiver's badge
+      if (selectedGift.type === 'legendary') {
         await supabase
           .from('profiles')
           .update({ has_legendary_badge: true })
-          .eq('id', user.id);
+          .eq('id', selectedUser.id);
+      } else if (selectedGift.type === 'ultra') {
+        await supabase
+          .from('profiles')
+          .update({ has_ultra_badge: true })
+          .eq('id', selectedUser.id);
       }
 
       toast({
-        title: "Gift sent! 🎉",
-        description: `${gift.name} sent to ${selectedUser.display_name}`,
+        title: "Gift sent!",
+        description: `${quantity}x ${selectedGift.name} sent to ${selectedUser.display_name}`,
       });
 
+      setSelectedGift(null);
+      setSelectedUser(null);
       setMessage('');
-      // Refresh user's coin balance
-      window.location.reload();
-    } catch (error) {
-      console.error('Error sending gift:', error);
+      setQuantity(1);
+      setSearchUser('');
+      setSearchResults([]);
+      fetchReceivedGifts();
+    } catch (error: any) {
       toast({
         title: "Failed to send gift",
-        description: "Please try again.",
+        description: error.message,
         variant: "destructive",
       });
-    } finally {
-      setSending(false);
     }
   };
 
-  const exchangeGift = async (gift: any) => {
-    if (!user || !gift.can_exchange) return;
-
+  const exchangeGift = async (giftId: string, giftPrice: number, giftType: string) => {
     try {
-      const exchangeValue = Math.floor(gift.price * 0.95); // 5% fee
-
-      // Add coins to user
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ coin_balance: (profile?.coin_balance || 0) + exchangeValue })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-
-      // Mark gift as exchanged
-      const { error: giftError } = await supabase
+      const { error } = await supabase
         .from('gifts')
         .update({ can_exchange: false })
-        .eq('id', gift.id);
+        .eq('id', giftId);
 
-      if (giftError) throw giftError;
+      if (error) throw error;
+
+      await updateCoins(Math.floor(giftPrice * 0.5));
+
+      // Check if user should lose badges after exchange
+      if (giftType === 'legendary' || giftType === 'ultra') {
+        const { data: remainingGifts } = await supabase
+          .from('gifts')
+          .select('gift_type')
+          .eq('receiver_id', user?.id)
+          .eq('can_exchange', true)
+          .in('gift_type', ['legendary', 'ultra']);
+
+        const hasLegendary = remainingGifts?.some(g => g.gift_type === 'legendary');
+        const hasUltra = remainingGifts?.some(g => g.gift_type === 'ultra');
+
+        await supabase
+          .from('profiles')
+          .update({ 
+            has_legendary_badge: hasLegendary || false,
+            has_ultra_badge: hasUltra || false
+          })
+          .eq('id', user?.id);
+      }
 
       toast({
-        title: "Gift exchanged! 💰",
-        description: `Received ${exchangeValue} coins (5% fee applied)`,
+        title: "Gift exchanged!",
+        description: `Received ${Math.floor(giftPrice * 0.5)} coins`,
       });
 
       fetchReceivedGifts();
-      // Refresh user's coin balance
-      window.location.reload();
-    } catch (error) {
-      console.error('Error exchanging gift:', error);
+    } catch (error: any) {
       toast({
-        title: "Failed to exchange",
-        description: "Please try again.",
+        title: "Exchange failed",
+        description: error.message,
         variant: "destructive",
       });
     }
   };
 
-  const viewUserGallery = async (user: any) => {
-    try {
-      const { data, error } = await supabase
-        .from('gifts')
-        .select(`
-          *,
-          sender:sender_id(display_name)
-        `)
-        .eq('receiver_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setGalleryGifts(data || []);
-      setGalleryUser(user);
-      setShowGallery(true);
-    } catch (error) {
-      console.error('Error fetching user gifts:', error);
+  const getGiftCardStyle = (type: string) => {
+    switch (type) {
+      case 'legendary':
+        return 'bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900 dark:to-yellow-800 border-yellow-400';
+      case 'ultra':
+        return 'bg-gradient-to-br from-red-100 to-red-200 dark:from-red-900 dark:to-red-800 border-red-500 animate-pulse';
+      default:
+        return 'bg-card border-border';
     }
   };
 
   return (
     <div className="min-h-screen bg-background pb-20">
       <div className="bg-gradient-to-r from-pink-500 to-purple-600 text-white p-6">
-        <h1 className="text-2xl font-bold flex items-center">
-          <Gift className="w-6 h-6 mr-2" />
-          Gift Store
-        </h1>
-        <div className="flex items-center mt-2">
-          <Coins className="w-4 h-4 mr-1" />
-          <span className="font-medium">{profile?.coin_balance || 0} Coins</span>
+        <div className="text-center">
+          <Gift className="w-12 h-12 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold">Gifts</h1>
+          <p className="text-pink-100">Send amazing gifts to your friends</p>
+          <div className="flex items-center justify-center mt-2">
+            <Coins className="w-4 h-4 mr-1" />
+            <span className="font-medium">{profile?.coin_balance || 0} Coins</span>
+          </div>
         </div>
       </div>
 
       <div className="p-4 space-y-6">
-        {/* User Search */}
+        {/* Gift Types */}
         <Card>
           <CardHeader>
-            <CardTitle>Send Gift To</CardTitle>
+            <CardTitle>Choose a Gift</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name or user number..."
-                value={searchUser}
-                onChange={(e) => setSearchUser(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            {selectedUser && (
-              <div className="p-3 bg-muted rounded-lg flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="font-medium">{selectedUser.display_name}</span>
-                  {selectedUser.has_legendary_badge && (
-                    <div className="px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full text-xs font-bold text-black">
-                      ✨ LEGENDARY
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              {giftTypes.map((gift) => (
+                <Card
+                  key={gift.id}
+                  className={`cursor-pointer transition-all hover:scale-105 ${
+                    selectedGift?.id === gift.id ? 'ring-2 ring-primary' : ''
+                  } ${getGiftCardStyle(gift.type)}`}
+                  onClick={() => setSelectedGift(gift)}
+                >
+                  <CardContent className="p-4 text-center">
+                    <div className={`text-3xl mb-2 ${gift.type === 'ultra' ? 'animate-bounce' : ''}`}>
+                      {gift.emoji}
                     </div>
-                  )}
-                  {selectedUser.is_online && (
-                    <div className="w-2 h-2 bg-green-500 rounded-full" />
-                  )}
-                </div>
+                    <h3 className="font-medium">{gift.name}</h3>
+                    <div className="flex items-center justify-center mt-1">
+                      <Coins className="w-3 h-3 mr-1" />
+                      <span className="text-sm font-medium">{gift.price.toLocaleString()}</span>
+                    </div>
+                    {gift.type === 'legendary' && (
+                      <Badge className="mt-1 bg-yellow-500 text-black">
+                        <Crown className="w-3 h-3 mr-1" />
+                        Legendary
+                      </Badge>
+                    )}
+                    {gift.type === 'ultra' && (
+                      <Badge className="mt-1 bg-red-500 text-white animate-pulse">
+                        <Zap className="w-3 h-3 mr-1" />
+                        Ultra
+                      </Badge>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">{gift.description}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quantity Selection */}
+        {selectedGift && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Quantity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center space-x-4">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => viewUserGallery(selectedUser)}
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  disabled={quantity <= 1}
                 >
-                  View Gallery
+                  -
                 </Button>
+                <Input
+                  type="number"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-20 text-center"
+                  min="1"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setQuantity(quantity + 1)}
+                >
+                  +
+                </Button>
+                <div className="text-sm text-muted-foreground">
+                  Total: {((selectedGift?.price || 0) * quantity).toLocaleString()} coins
+                </div>
               </div>
-            )}
+            </CardContent>
+          </Card>
+        )}
 
-            {users.length > 0 && (
-              <div className="max-h-32 overflow-y-auto space-y-2">
-                {users.map((user) => (
+        {/* User Search */}
+        {selectedGift && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Send to User</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name or user number..."
+                  value={searchUser}
+                  onChange={(e) => setSearchUser(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              
+              {searchingUsers && (
+                <div className="text-center py-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mx-auto"></div>
+                </div>
+              )}
+              
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {searchResults.map((user) => (
                   <div
                     key={user.id}
-                    className="flex items-center justify-between p-2 hover:bg-muted rounded cursor-pointer"
+                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                      selectedUser?.id === user.id ? 'bg-primary/10' : 'hover:bg-muted'
+                    }`}
                     onClick={() => setSelectedUser(user)}
                   >
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">{user.display_name}</span>
-                      {user.has_legendary_badge && (
-                        <div className="px-1 py-0.5 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded text-xs font-bold text-black">
-                          ✨
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                        {user.profile_picture ? (
+                          <img 
+                            src={user.profile_picture} 
+                            alt="Profile" 
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs">{user.display_name[0]}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <p className="font-medium">{user.display_name}</p>
+                          {user.has_legendary_badge && (
+                            <Badge className="bg-yellow-500 text-black">
+                              <Crown className="w-3 h-3 mr-1" />
+                              Legendary
+                            </Badge>
+                          )}
+                          {user.has_ultra_badge && (
+                            <Badge className="bg-red-500 text-white animate-pulse">
+                              <Zap className="w-3 h-3 mr-1" />
+                              Ultra
+                            </Badge>
+                          )}
                         </div>
-                      )}
-                      <span className="text-sm text-muted-foreground">#{user.user_number}</span>
+                        <p className="text-sm text-muted-foreground">#{user.user_number}</p>
+                      </div>
                     </div>
                     {user.is_online && (
                       <div className="w-3 h-3 bg-green-500 rounded-full" />
@@ -310,207 +392,72 @@ const GiftsPage = () => {
                   </div>
                 ))}
               </div>
-            )}
-
-            <Textarea
-              placeholder="Add a message (optional)..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={2}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Gift Categories */}
-        {giftCategories.map((category) => (
-          <Card key={category.name}>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                {category.name}
-                {category.name === "Legendary Gifts" && (
-                  <Crown className="w-5 h-5 ml-2 text-yellow-500" />
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {category.gifts.map((gift) => (
-                  <div
-                    key={gift.name}
-                    className={`p-4 border rounded-lg text-center cursor-pointer transition-all hover:scale-105 ${
-                      gift.isLegendary
-                        ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 border-yellow-400 dark:from-yellow-900 dark:to-yellow-800'
-                        : 'hover:shadow-md'
-                    }`}
-                    onClick={() => sendGift(gift)}
+              
+              {selectedUser && (
+                <div className="space-y-3">
+                  <Textarea
+                    placeholder="Add a message (optional)"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    rows={2}
+                  />
+                  
+                  <Button
+                    onClick={sendGift}
+                    className="w-full"
+                    disabled={!profile || profile.coin_balance < ((selectedGift?.price || 0) * quantity)}
                   >
-                    {gift.isLegendary && (
-                      <div className="mb-2 flex justify-center">
-                        <div className="px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full text-xs font-bold text-black flex items-center">
-                          <Crown className="w-3 h-3 mr-1" />
-                          LEGENDARY
-                        </div>
-                      </div>
-                    )}
-                    <div 
-                      className={`text-4xl mb-2 ${
-                        gift.animation === 'bounce' ? 'animate-bounce-gift' : 
-                        gift.animation === 'pulse' ? 'animate-pulse-soft' : ''
-                      }`}
-                    >
-                      {gift.emoji}
-                    </div>
-                    <h3 className="font-medium text-sm">{gift.name}</h3>
-                    <div className="flex items-center justify-center mt-2">
-                      <Coins className="w-3 h-3 mr-1" />
-                      <span className="text-sm font-bold">{gift.price.toLocaleString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    Send {quantity}x {selectedGift?.name} to {selectedUser.display_name}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
-        ))}
+        )}
 
         {/* Received Gifts */}
         <Card>
           <CardHeader>
-            <CardTitle>My Gift Collection</CardTitle>
+            <CardTitle>Your Gifts</CardTitle>
           </CardHeader>
           <CardContent>
             {receivedGifts.length > 0 ? (
-              <div className="space-y-4">
-                {/* Museum Display Cases */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {receivedGifts.slice(0, 6).map((gift) => (
-                    <div
-                      key={gift.id}
-                      className={`relative p-4 rounded-lg border-2 bg-gradient-to-b from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 ${
-                        gift.is_legendary
-                          ? 'border-yellow-400 shadow-lg shadow-yellow-200 dark:shadow-yellow-900'
-                          : 'border-gray-300 dark:border-gray-600'
-                      }`}
-                      style={{
-                        background: gift.is_legendary
-                          ? 'linear-gradient(135deg, rgba(255,215,0,0.1) 0%, rgba(255,193,7,0.05) 100%)'
-                          : undefined
-                      }}
-                    >
-                      {/* Glass Effect */}
-                      <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-lg pointer-events-none" />
-                      
-                      {/* Legendary Badge */}
-                      {gift.is_legendary && (
-                        <div className="absolute -top-2 -right-2 px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full text-xs font-bold text-black flex items-center animate-pulse-soft">
-                          <Crown className="w-3 h-3 mr-1" />
-                          LEGENDARY
-                        </div>
-                      )}
-
-                      <div className="text-center relative z-10">
-                        <div 
-                          className={`text-3xl mb-2 ${
-                            gift.is_legendary ? 'animate-bounce-gift' : ''
-                          }`}
-                        >
+              <div className="grid grid-cols-2 gap-3">
+                {receivedGifts.map((gift) => (
+                  <Card key={gift.id} className={getGiftCardStyle(gift.gift_type)}>
+                    <CardContent className="p-3">
+                      <div className="text-center">
+                        <div className={`text-2xl mb-1 ${gift.gift_type === 'ultra' ? 'animate-bounce' : ''}`}>
                           {gift.gift_emoji}
                         </div>
-                        <h3 className="font-medium text-sm">{gift.gift_name}</h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          From: {gift.sender?.display_name}
+                        <h4 className="font-medium text-sm">{gift.gift_name}</h4>
+                        <p className="text-xs text-muted-foreground">
+                          From {gift.sender?.display_name}
                         </p>
-                        <div className="mt-2 flex items-center justify-center">
-                          <Coins className="w-3 h-3 mr-1" />
-                          <span className="text-xs">{gift.price.toLocaleString()}</span>
-                        </div>
-                        
+                        {gift.message && (
+                          <p className="text-xs italic mt-1">"{gift.message}"</p>
+                        )}
                         {gift.can_exchange && (
                           <Button
                             size="sm"
                             variant="outline"
                             className="mt-2 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              exchangeGift(gift);
-                            }}
+                            onClick={() => exchangeGift(gift.id, gift.price, gift.gift_type)}
                           >
-                            Exchange (-5%)
+                            Exchange for {Math.floor(gift.price * 0.5)} coins
                           </Button>
                         )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-
-                {receivedGifts.length > 6 && (
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground">
-                      And {receivedGifts.length - 6} more gifts in your collection...
-                    </p>
-                  </div>
-                )}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             ) : (
-              <p className="text-center text-muted-foreground py-8">
-                No gifts received yet. Send yourself a gift to get started!
-              </p>
+              <p className="text-center text-muted-foreground py-4">No gifts received yet</p>
             )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Gallery Modal */}
-      {showGallery && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-2xl max-h-[80vh] overflow-hidden">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>{galleryUser?.display_name}'s Gift Gallery</span>
-                <Button variant="outline" size="sm" onClick={() => setShowGallery(false)}>
-                  Close
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-y-auto">
-              {galleryGifts.length > 0 ? (
-                <div className="grid grid-cols-3 gap-4">
-                  {galleryGifts.map((gift) => (
-                    <div
-                      key={gift.id}
-                      className={`p-3 rounded-lg border text-center ${
-                        gift.is_legendary
-                          ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 border-yellow-400 dark:from-yellow-900 dark:to-yellow-800'
-                          : 'bg-muted'
-                      }`}
-                    >
-                      {gift.is_legendary && (
-                        <div className="mb-1 flex justify-center">
-                          <Crown className="w-3 h-3 text-yellow-600" />
-                        </div>
-                      )}
-                      <div 
-                        className={`text-2xl mb-1 ${
-                          gift.is_legendary ? 'animate-bounce-gift' : ''
-                        }`}
-                      >
-                        {gift.gift_emoji}
-                      </div>
-                      <p className="text-xs font-medium">{gift.gift_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        From: {gift.sender?.display_name}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  No gifts in gallery yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 };

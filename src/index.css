@@ -144,6 +144,15 @@
   }
 }
 
+@keyframes ultra-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(255, 0, 0, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 0, 0, 1);
+  }
+}
+
 .animate-bounce-gift {
   animation: bounce-gift 2s ease-in-out infinite;
 }
@@ -160,6 +169,10 @@
   animation: legendary-glow 2s ease-in-out infinite;
 }
 
+.animate-ultra-glow {
+  animation: ultra-glow 2s ease-in-out infinite;
+}
+
 /* Legendary badge styles */
 .legendary-badge {
   background: linear-gradient(45deg, #ffd700, #ffed4e);
@@ -167,6 +180,15 @@
   font-weight: bold;
   animation: pulse-soft 2s ease-in-out infinite;
   box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* Ultra badge styles */
+.ultra-badge {
+  background: linear-gradient(45deg, #ff0000, #ff4500);
+  color: #fff;
+  font-weight: bold;
+  animation: ultra-glow 2s ease-in-out infinite;
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
 }
 
 /* Museum showcase glass effect */

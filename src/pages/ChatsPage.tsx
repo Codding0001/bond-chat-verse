@@ -7,7 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { MessageCircle, Plus, Search, Users } from 'lucide-react';
+import { MessageCircle, Plus, Search, Users, Crown, Zap } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface Chat {
   id: string;
@@ -24,6 +25,9 @@ interface Chat {
     display_name: string;
     user_number: string;
     is_online: boolean;
+    profile_picture: string;
+    has_legendary_badge: boolean;
+    has_ultra_badge: boolean;
   };
 }
 
@@ -45,7 +49,6 @@ const ChatsPage = () => {
     }
   }, [user]);
 
-  // Only search users when user has typed something significant
   useEffect(() => {
     if (newChatUser.length >= 3) {
       searchUsers();
@@ -59,7 +62,6 @@ const ChatsPage = () => {
 
     try {
       setLoading(true);
-      // Get user's chat memberships
       const { data: memberships, error: memberError } = await supabase
         .from('chat_members')
         .select(`
@@ -81,12 +83,10 @@ const ChatsPage = () => {
       }
 
       if (memberships && memberships.length > 0) {
-        // Process chats if we have any
         const chatsWithDetails = await Promise.all(
           memberships.map(async (membership: any) => {
             const chat = membership.chats;
             
-            // Get latest message
             const { data: messages } = await supabase
               .from('messages')
               .select(`
@@ -99,7 +99,6 @@ const ChatsPage = () => {
               .order('created_at', { ascending: false })
               .limit(1);
 
-            // Get other member for direct chats
             let otherMember = null;
             if (!chat.is_group) {
               const { data: otherMembers } = await supabase
@@ -109,7 +108,10 @@ const ChatsPage = () => {
                   profiles (
                     display_name,
                     user_number,
-                    is_online
+                    is_online,
+                    profile_picture,
+                    has_legendary_badge,
+                    has_ultra_badge
                   )
                 `)
                 .eq('chat_id', chat.id)
@@ -155,7 +157,7 @@ const ChatsPage = () => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, display_name, user_number, is_online')
+        .select('id, display_name, user_number, is_online, profile_picture, has_legendary_badge, has_ultra_badge')
         .neq('id', user?.id)
         .or(`display_name.ilike.%${newChatUser}%,user_number.ilike.%${newChatUser}%`)
         .limit(10);
@@ -174,7 +176,6 @@ const ChatsPage = () => {
     if (!user) return;
 
     try {
-      // Check if chat already exists
       const { data: existingMemberships } = await supabase
         .from('chat_members')
         .select('chat_id')
@@ -189,7 +190,6 @@ const ChatsPage = () => {
             .eq('user_id', otherUserId);
 
           if (otherMemberships && otherMemberships.length > 0) {
-            // Chat already exists
             navigate(`/chats/${membership.chat_id}`);
             setShowNewChatModal(false);
             return;
@@ -197,7 +197,6 @@ const ChatsPage = () => {
         }
       }
 
-      // Create new chat
       const { data: newChat, error: chatError } = await supabase
         .from('chats')
         .insert({
@@ -209,7 +208,6 @@ const ChatsPage = () => {
 
       if (chatError) throw chatError;
 
-      // Add both users to the chat
       const { error: memberError } = await supabase
         .from('chat_members')
         .insert([
@@ -284,9 +282,15 @@ const ChatsPage = () => {
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-3">
                     <div className="relative">
-                      <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-muted flex items-center justify-center">
                         {chat.is_group ? (
                           <Users className="w-6 h-6 text-primary" />
+                        ) : chat.other_member?.profile_picture ? (
+                          <img 
+                            src={chat.other_member.profile_picture} 
+                            alt="Profile" 
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           <MessageCircle className="w-6 h-6 text-primary" />
                         )}
@@ -298,9 +302,21 @@ const ChatsPage = () => {
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-medium text-foreground truncate">
-                          {chat.name}
-                        </h3>
+                        <div className="flex items-center space-x-2">
+                          <h3 className="font-medium text-foreground truncate">
+                            {chat.name}
+                          </h3>
+                          {chat.other_member?.has_legendary_badge && (
+                            <Badge className="bg-yellow-500 text-black">
+                              <Crown className="w-3 h-3" />
+                            </Badge>
+                          )}
+                          {chat.other_member?.has_ultra_badge && (
+                            <Badge className="bg-red-500 text-white animate-pulse">
+                              <Zap className="w-3 h-3" />
+                            </Badge>
+                          )}
+                        </div>
                         {chat.last_message && (
                           <span className="text-xs text-muted-foreground">
                             {new Date(chat.last_message.created_at).toLocaleDateString()}
@@ -365,9 +381,34 @@ const ChatsPage = () => {
                     className="flex items-center justify-between p-2 hover:bg-muted rounded cursor-pointer"
                     onClick={() => createDirectChat(user.id)}
                   >
-                    <div>
-                      <p className="font-medium">{user.display_name}</p>
-                      <p className="text-sm text-muted-foreground">#{user.user_number}</p>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                        {user.profile_picture ? (
+                          <img 
+                            src={user.profile_picture} 
+                            alt="Profile" 
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs">{user.display_name[0]}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <p className="font-medium">{user.display_name}</p>
+                          {user.has_legendary_badge && (
+                            <Badge className="bg-yellow-500 text-black">
+                              <Crown className="w-3 h-3" />
+                            </Badge>
+                          )}
+                          {user.has_ultra_badge && (
+                            <Badge className="bg-red-500 text-white animate-pulse">
+                              <Zap className="w-3 h-3" />
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">#{user.user_number}</p>
+                      </div>
                     </div>
                     {user.is_online && (
                       <div className="w-3 h-3 bg-green-500 rounded-full" />

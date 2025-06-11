@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
@@ -15,6 +16,7 @@ interface Profile {
   is_admin: boolean;
   has_legendary_badge: boolean;
   legendary_badge_color: string;
+  has_ultra_badge: boolean;
 }
 
 interface AuthContextType {
@@ -66,7 +68,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           is_online: true,
           is_admin: false,
           has_legendary_badge: false,
-          legendary_badge_color: 'gold'
+          legendary_badge_color: 'gold',
+          has_ultra_badge: false,
+          profile_picture: ''
         })
         .select()
         .single();
@@ -102,7 +106,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.log('Profile not found, creating new profile...');
-        // If profile doesn't exist, create it
         if (error.code === 'PGRST116') {
           const user = await supabase.auth.getUser();
           if (user.data.user) {
@@ -253,7 +256,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     console.log('Setting up auth state listener...');
     
-    // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state changed:', event, session?.user?.id);
@@ -261,7 +263,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          // Delay profile fetching slightly to avoid potential race conditions
           setTimeout(() => {
             fetchProfile(session.user.id);
           }, 100);
@@ -273,7 +274,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
 
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       console.log('Initial session:', session?.user?.id);
       setSession(session);
