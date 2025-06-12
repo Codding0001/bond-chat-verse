@@ -1,320 +1,21 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useSettings } from '@/contexts/SettingsContext';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, Send, DollarSign, Check, CheckCheck } from 'lucide-react';
-
-interface Message {
-  id: string;
-  content: string;
-  sender_id: string;
-  created_at: string;
-  message_type: string;
-  is_read?: boolean;
-}
-
-interface ChatMember {
-  user_id: string;
-  profiles: {
-    display_name: string;
-    user_number: string;
-    is_online: boolean;
-  };
-}
+import { useAuth } from '@/contexts/AuthContext';
+import { useChat } from '@/hooks/useChat';
+import ChatHeader from '@/components/chat/ChatHeader';
+import MessageList from '@/components/chat/MessageList';
+import MessageInput from '@/components/chat/MessageInput';
+import TipModal from '@/components/chat/TipModal';
 
 const ChatDetailPage = () => {
   const { chatId } = useParams();
-  const navigate = useNavigate();
-  const { user, profile, updateCoins } = useAuth();
-  const { settings, playNotificationSound } = useSettings();
-  const { toast } = useToast();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [chatMembers, setChatMembers] = useState<ChatMember[]>([]);
+  const { user } = useAuth();
+  const { settings } = useSettings();
   const [showTipModal, setShowTipModal] = useState(false);
-  const [tipAmount, setTipAmount] = useState('');
-  const [loading, setLoading] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    if (chatId) {
-      fetchMessages();
-      fetchChatMembers();
-      markMessagesAsRead();
-    }
-  }, [chatId]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    if (!chatId) return;
-
-    const channel = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `chat_id=eq.${chatId}`,
-        },
-        (payload) => {
-          const newMessage = payload.new as Message;
-          setMessages(prev => [...prev, newMessage]);
-          
-          // Play sound if message is from another user
-          if (newMessage.sender_id !== user?.id) {
-            playNotificationSound();
-            // Mark as read immediately since user is viewing the chat
-            markMessagesAsRead();
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_members',
-          filter: `chat_id=eq.${chatId}`,
-        },
-        () => {
-          // Refresh messages to update read status
-          fetchMessages();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [chatId, user?.id, playNotificationSound]);
-
-  const fetchMessages = async () => {
-    if (!chatId || !user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-
-      // Get the last read timestamp for the other user
-      const { data: otherMemberData } = await supabase
-        .from('chat_members')
-        .select('last_read_at, user_id')
-        .eq('chat_id', chatId)
-        .neq('user_id', user.id)
-        .single();
-
-      const otherUserLastRead = otherMemberData?.last_read_at;
-
-      // Mark messages as read based on timestamps
-      const messagesWithReadStatus = (data || []).map(message => ({
-        ...message,
-        is_read: message.sender_id === user.id && otherUserLastRead ? 
-          new Date(message.created_at) <= new Date(otherUserLastRead) : false
-      }));
-
-      setMessages(messagesWithReadStatus);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchChatMembers = async () => {
-    if (!chatId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('chat_members')
-        .select(`
-          user_id,
-          profiles (
-            display_name,
-            user_number,
-            is_online
-          )
-        `)
-        .eq('chat_id', chatId);
-
-      if (error) throw error;
-      setChatMembers(data || []);
-    } catch (error) {
-      console.error('Error fetching chat members:', error);
-    }
-  };
-
-  const markMessagesAsRead = async () => {
-    if (!chatId || !user) return;
-
-    try {
-      await supabase
-        .from('chat_members')
-        .update({ 
-          last_read_at: new Date().toISOString(),
-          unread_count: 0 
-        })
-        .eq('chat_id', chatId)
-        .eq('user_id', user.id);
-    } catch (error) {
-      console.error('Error marking messages as read:', error);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !chatId || !user) return;
-
-    try {
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          content: newMessage,
-          sender_id: user.id,
-          chat_id: chatId,
-          message_type: 'text'
-        });
-
-      if (error) throw error;
-
-      // Update unread count for other members
-      const { data: otherMembers } = await supabase
-        .from('chat_members')
-        .select('user_id, unread_count')
-        .eq('chat_id', chatId)
-        .neq('user_id', user.id);
-
-      if (otherMembers) {
-        for (const member of otherMembers) {
-          await supabase
-            .from('chat_members')
-            .update({ unread_count: (member.unread_count || 0) + 1 })
-            .eq('chat_id', chatId)
-            .eq('user_id', member.user_id);
-        }
-      }
-
-      setNewMessage('');
-    } catch (error) {
-      console.error('Error sending message:', error);
-      toast({
-        title: "Error",
-        description: "Failed to send message",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const sendTip = async () => {
-    const amount = parseInt(tipAmount);
-    if (!amount || amount <= 0 || !chatId || !user || !profile) return;
-
-    if (profile.coin_balance < amount) {
-      toast({
-        title: "Insufficient coins",
-        description: "You don't have enough coins for this tip",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      // Get other chat member
-      const otherMember = chatMembers.find(m => m.user_id !== user.id);
-      if (!otherMember) return;
-
-      // Send tip message
-      await supabase
-        .from('messages')
-        .insert({
-          content: `💰 Sent ${amount} coins as a tip!`,
-          sender_id: user.id,
-          chat_id: chatId,
-          message_type: 'tip'
-        });
-
-      // Update coin balances
-      await updateCoins(-amount);
-
-      // Get receiver's current balance and update it
-      const { data: receiverProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('coin_balance')
-        .eq('id', otherMember.user_id)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      const newBalance = (receiverProfile.coin_balance || 0) + amount;
-      
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ coin_balance: newBalance })
-        .eq('id', otherMember.user_id);
-
-      if (updateError) throw updateError;
-
-      // Record transaction
-      await supabase
-        .from('transactions')
-        .insert({
-          from_user_id: user.id,
-          to_user_id: otherMember.user_id,
-          amount: amount,
-          transaction_type: 'tip',
-          description: 'Chat tip'
-        });
-
-      setTipAmount('');
-      setShowTipModal(false);
-      
-      toast({
-        title: "Tip sent!",
-        description: `You sent ${amount} coins to ${otherMember.profiles.display_name}`,
-      });
-    } catch (error) {
-      console.error('Error sending tip:', error);
-      toast({
-        title: "Error",
-        description: "Failed to send tip",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const getOtherMemberName = () => {
-    const otherMember = chatMembers.find(m => m.user_id !== user?.id);
-    return otherMember?.profiles.display_name || 'Chat';
-  };
-
-  const getOtherMemberStatus = () => {
-    const otherMember = chatMembers.find(m => m.user_id !== user?.id);
-    if (!otherMember) return 'Offline';
-    
-    if (otherMember.profiles.is_online) {
-      return 'Online';
-    }
-    
-    return 'Offline';
-  };
+  
+  const { messages, loading, sendMessage, getOtherMember } = useChat(chatId);
 
   if (loading) {
     return (
@@ -324,121 +25,30 @@ const ChatDetailPage = () => {
     );
   }
 
+  const otherMember = getOtherMember();
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col" 
          style={{ backgroundColor: settings?.chat_wallpaper_color || 'rgba(255, 255, 255, 1)' }}>
-      {/* Header */}
-      <div className="bg-white p-4 border-b border-gray-200 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => navigate('/chats')}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold">{getOtherMemberName()}</h1>
-            <p className="text-sm text-gray-500">{getOtherMemberStatus()}</p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowTipModal(true)}
-        >
-          <DollarSign className="w-4 h-4" />
-        </Button>
-      </div>
+      
+      <ChatHeader 
+        otherMember={otherMember}
+        onTipClick={() => setShowTipModal(true)}
+      />
 
-      {/* Messages */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto pb-20">
-        {messages.map((message, index) => {
-          const isCurrentUser = message.sender_id === user?.id;
-          const showStatus = isCurrentUser && index === messages.length - 1;
-          
-          return (
-            <div
-              key={message.id}
-              className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
-            >
-              <Card className={`max-w-xs ${
-                isCurrentUser ? 'bg-blue-500 text-white' : 'bg-white'
-              }`}>
-                <CardContent className="p-3">
-                  <p className="text-sm">{message.content}</p>
-                  <div className={`flex items-center justify-between mt-1 ${
-                    isCurrentUser ? 'text-blue-100' : 'text-gray-500'
-                  }`}>
-                    <p className="text-xs">
-                      {new Date(message.created_at).toLocaleTimeString()}
-                    </p>
-                    {showStatus && isCurrentUser && (
-                      <div className="ml-2">
-                        {message.is_read ? (
-                          <CheckCheck className="w-3 h-3 text-blue-200" />
-                        ) : (
-                          <Check className="w-3 h-3 text-blue-300" />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          );
-        })}
-        <div ref={messagesEndRef} />
-      </div>
+      <MessageList 
+        messages={messages}
+        currentUserId={user?.id}
+      />
 
-      {/* Message Input */}
-      <div className="bg-white p-4 border-t border-gray-200 fixed bottom-0 left-0 right-0">
-        <div className="flex space-x-2">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
-            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-            className="flex-1"
-          />
-          <Button onClick={sendMessage}>
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+      <MessageInput onSendMessage={sendMessage} />
 
-      {/* Tip Modal */}
-      {showTipModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-80 mx-4">
-            <CardContent className="p-6">
-              <h3 className="text-lg font-bold mb-4">Send Tip</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Your balance: {profile?.coin_balance || 0} coins
-              </p>
-              <Input
-                type="number"
-                value={tipAmount}
-                onChange={(e) => setTipAmount(e.target.value)}
-                placeholder="Enter amount"
-                className="mb-4"
-              />
-              <div className="flex space-x-2">
-                <Button onClick={sendTip} className="flex-1">
-                  Send Tip
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowTipModal(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <TipModal
+        isOpen={showTipModal}
+        onClose={() => setShowTipModal(false)}
+        otherMember={otherMember}
+        chatId={chatId!}
+      />
     </div>
   );
 };
