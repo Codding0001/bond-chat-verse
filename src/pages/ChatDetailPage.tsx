@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, Send, DollarSign } from 'lucide-react';
+import { ArrowLeft, Send, DollarSign, Check, CheckCheck } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -15,6 +16,7 @@ interface Message {
   sender_id: string;
   created_at: string;
   message_type: string;
+  is_read?: boolean;
 }
 
 interface ChatMember {
@@ -22,6 +24,8 @@ interface ChatMember {
   profiles: {
     display_name: string;
     user_number: string;
+    is_online: boolean;
+    last_seen: string;
   };
 }
 
@@ -37,6 +41,7 @@ const ChatDetailPage = () => {
   const [showTipModal, setShowTipModal] = useState(false);
   const [tipAmount, setTipAmount] = useState('');
   const [loading, setLoading] = useState(true);
+  const [lastReadMessageId, setLastReadMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -75,7 +80,22 @@ const ChatDetailPage = () => {
           // Play sound if message is from another user
           if (newMessage.sender_id !== user?.id) {
             playNotificationSound();
+            // Mark as read immediately since user is viewing the chat
+            markMessagesAsRead();
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_members',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        () => {
+          // Refresh messages to update read status
+          fetchMessages();
         }
       )
       .subscribe();
@@ -86,7 +106,7 @@ const ChatDetailPage = () => {
   }, [chatId, user?.id, playNotificationSound]);
 
   const fetchMessages = async () => {
-    if (!chatId) return;
+    if (!chatId || !user) return;
 
     try {
       const { data, error } = await supabase
@@ -96,7 +116,25 @@ const ChatDetailPage = () => {
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      setMessages(data || []);
+
+      // Get the last read timestamp for the other user
+      const { data: otherMemberData } = await supabase
+        .from('chat_members')
+        .select('last_read_at, user_id')
+        .eq('chat_id', chatId)
+        .neq('user_id', user.id)
+        .single();
+
+      const otherUserLastRead = otherMemberData?.last_read_at;
+
+      // Mark messages as read based on timestamps
+      const messagesWithReadStatus = (data || []).map(message => ({
+        ...message,
+        is_read: message.sender_id === user.id && otherUserLastRead ? 
+          new Date(message.created_at) <= new Date(otherUserLastRead) : false
+      }));
+
+      setMessages(messagesWithReadStatus);
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
@@ -114,7 +152,9 @@ const ChatDetailPage = () => {
           user_id,
           profiles (
             display_name,
-            user_number
+            user_number,
+            is_online,
+            last_seen
           )
         `)
         .eq('chat_id', chatId);
@@ -161,7 +201,7 @@ const ChatDetailPage = () => {
       // Update unread count for other members
       const { data: otherMembers } = await supabase
         .from('chat_members')
-        .select('user_id')
+        .select('user_id, unread_count')
         .eq('chat_id', chatId)
         .neq('user_id', user.id);
 
@@ -169,12 +209,7 @@ const ChatDetailPage = () => {
         for (const member of otherMembers) {
           await supabase
             .from('chat_members')
-            .update({ unread_count: (await supabase
-              .from('chat_members')
-              .select('unread_count')
-              .eq('chat_id', chatId)
-              .eq('user_id', member.user_id)
-              .single()).data?.unread_count || 0 + 1 })
+            .update({ unread_count: (member.unread_count || 0) + 1 })
             .eq('chat_id', chatId)
             .eq('user_id', member.user_id);
         }
@@ -273,6 +308,28 @@ const ChatDetailPage = () => {
     return otherMember?.profiles.display_name || 'Chat';
   };
 
+  const getOtherMemberStatus = () => {
+    const otherMember = chatMembers.find(m => m.user_id !== user?.id);
+    if (!otherMember) return 'Offline';
+    
+    if (otherMember.profiles.is_online) {
+      return 'Online';
+    }
+    
+    if (otherMember.profiles.last_seen) {
+      const lastSeen = new Date(otherMember.profiles.last_seen);
+      const now = new Date();
+      const diffMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / (1000 * 60));
+      
+      if (diffMinutes < 5) return 'Just now';
+      if (diffMinutes < 60) return `${diffMinutes}m ago`;
+      if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)}h ago`;
+      return `${Math.floor(diffMinutes / 1440)}d ago`;
+    }
+    
+    return 'Offline';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -294,7 +351,10 @@ const ChatDetailPage = () => {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h1 className="text-xl font-bold">{getOtherMemberName()}</h1>
+          <div>
+            <h1 className="text-xl font-bold">{getOtherMemberName()}</h1>
+            <p className="text-sm text-gray-500">{getOtherMemberStatus()}</p>
+          </div>
         </div>
         <Button
           variant="outline"
@@ -307,25 +367,41 @@ const ChatDetailPage = () => {
 
       {/* Messages */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto pb-20">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
-          >
-            <Card className={`max-w-xs ${
-              message.sender_id === user?.id ? 'bg-blue-500 text-white' : 'bg-white'
-            }`}>
-              <CardContent className="p-3">
-                <p className="text-sm">{message.content}</p>
-                <p className={`text-xs mt-1 ${
-                  message.sender_id === user?.id ? 'text-blue-100' : 'text-gray-500'
-                }`}>
-                  {new Date(message.created_at).toLocaleTimeString()}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        ))}
+        {messages.map((message, index) => {
+          const isCurrentUser = message.sender_id === user?.id;
+          const showStatus = isCurrentUser && index === messages.length - 1;
+          
+          return (
+            <div
+              key={message.id}
+              className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
+            >
+              <Card className={`max-w-xs ${
+                isCurrentUser ? 'bg-blue-500 text-white' : 'bg-white'
+              }`}>
+                <CardContent className="p-3">
+                  <p className="text-sm">{message.content}</p>
+                  <div className={`flex items-center justify-between mt-1 ${
+                    isCurrentUser ? 'text-blue-100' : 'text-gray-500'
+                  }`}>
+                    <p className="text-xs">
+                      {new Date(message.created_at).toLocaleTimeString()}
+                    </p>
+                    {showStatus && isCurrentUser && (
+                      <div className="ml-2">
+                        {message.is_read ? (
+                          <CheckCheck className="w-3 h-3 text-blue-200" />
+                        ) : (
+                          <Check className="w-3 h-3 text-blue-300" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
