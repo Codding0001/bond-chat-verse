@@ -1,58 +1,115 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Edit, LogOut, Gift, Settings, Coins, Crown, Zap } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { Crown, Zap, Gift, Settings, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import ProfilePictureUpload from '@/components/ProfilePictureUpload';
+
+interface GiftData {
+  gift_name: string;
+  gift_emoji: string;
+  price: number;
+  count: number;
+  sender_name: string;
+  is_legendary: boolean;
+}
 
 const ProfilePage = () => {
-  const { user, profile, logout, updateProfile } = useAuth();
+  const { user, profile, updateProfile } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
-  const [receivedGifts, setReceivedGifts] = useState<any[]>([]);
+  const [gifts, setGifts] = useState<GiftData[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (profile) {
-      setDisplayName(profile.display_name);
+      setDisplayName(profile.display_name || '');
       setBio(profile.bio || '');
-      fetchReceivedGifts();
+      fetchGifts();
     }
   }, [profile]);
 
-  const fetchReceivedGifts = async () => {
+  const fetchGifts = async () => {
     if (!user) return;
 
     try {
       const { data, error } = await supabase
         .from('gifts')
         .select(`
-          *,
-          sender:sender_id(display_name)
+          gift_name,
+          gift_emoji,
+          price,
+          is_legendary,
+          profiles:sender_id (display_name)
         `)
         .eq('receiver_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(6);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setReceivedGifts(data || []);
+
+      // Group gifts by type and count them
+      const giftMap = new Map();
+      
+      (data || []).forEach((gift: any) => {
+        const key = `${gift.gift_name}-${gift.gift_emoji}`;
+        if (giftMap.has(key)) {
+          const existing = giftMap.get(key);
+          existing.count += 1;
+          // Keep the most recent sender name
+        } else {
+          giftMap.set(key, {
+            gift_name: gift.gift_name,
+            gift_emoji: gift.gift_emoji,
+            price: gift.price,
+            count: 1,
+            sender_name: gift.profiles?.display_name || 'Unknown',
+            is_legendary: gift.is_legendary
+          });
+        }
+      });
+
+      setGifts(Array.from(giftMap.values()));
     } catch (error) {
       console.error('Error fetching gifts:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSave = async () => {
-    await updateProfile({ display_name: displayName, bio });
-    setIsEditing(false);
+    if (!user) return;
+
+    try {
+      await updateProfile({
+        display_name: displayName,
+        bio: bio
+      });
+
+      setIsEditing(false);
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully.",
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update profile. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
-  if (!profile) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -62,108 +119,110 @@ const ProfilePage = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white p-6">
-        <div className="text-center">
-          <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center overflow-hidden">
-            {profile.profile_picture ? (
-              <img 
-                src={profile.profile_picture} 
-                alt="Profile" 
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <User className="w-10 h-10" />
-            )}
-          </div>
-          <h1 className="text-xl font-bold flex items-center justify-center">
-            {profile.display_name}
-            {profile.has_legendary_badge && (
-              <Badge className="ml-2 bg-yellow-500 text-black animate-pulse">
-                <Crown className="w-3 h-3 mr-1" />
-                LEGENDARY
-              </Badge>
-            )}
-            {profile.has_ultra_badge && (
-              <Badge className="ml-2 bg-red-500 text-white animate-pulse">
-                <Zap className="w-3 h-3 mr-1" />
-                ULTRA
-              </Badge>
-            )}
-          </h1>
-          <p className="text-purple-100">#{profile.user_number}</p>
-          <div className="flex items-center justify-center mt-2">
-            <Coins className="w-4 h-4 mr-1" />
-            <span className="font-medium">{profile.coin_balance} Coins</span>
-          </div>
-        </div>
-      </div>
-
       <div className="p-4 space-y-6">
-        {/* Profile Info */}
+        {/* Profile Header */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Profile Information</CardTitle>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              <Edit className="w-4 h-4 mr-2" />
-              {isEditing ? 'Cancel' : 'Edit'}
-            </Button>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Profile</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/settings')}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="flex items-center space-x-4">
+              <ProfilePictureUpload />
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <h2 className="text-xl font-bold">{profile?.display_name}</h2>
+                  {profile?.has_legendary_badge && (
+                    <Badge className="bg-yellow-500 text-black">
+                      <Crown className="w-3 h-3 mr-1" />
+                      Legendary
+                    </Badge>
+                  )}
+                  {profile?.has_ultra_badge && (
+                    <Badge className="bg-red-500 text-white animate-pulse">
+                      <Zap className="w-3 h-3 mr-1" />
+                      Ultra
+                    </Badge>
+                  )}
+                  {profile?.is_admin && (
+                    <Badge className="bg-purple-500 text-white">
+                      <Shield className="w-3 h-3 mr-1" />
+                      Admin
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-muted-foreground">#{profile?.user_number}</p>
+                <p className="text-sm text-muted-foreground">
+                  Coins: {profile?.coin_balance || 0}
+                </p>
+              </div>
+            </div>
+
             {isEditing ? (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Display Name
-                  </label>
+                  <label className="text-sm font-medium">Display Name</label>
                   <Input
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Enter your display name"
+                    placeholder="Enter display name"
                   />
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Bio
-                  </label>
+                  <label className="text-sm font-medium">Bio</label>
                   <Textarea
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    placeholder="Tell us about yourself"
+                    placeholder="Tell us about yourself..."
                     rows={3}
                   />
                 </div>
-                
-                <Button onClick={handleSave} className="w-full">
-                  Save Changes
-                </Button>
+                <div className="flex space-x-2">
+                  <Button onClick={handleSave} className="flex-1">
+                    Save Changes
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setDisplayName(profile?.display_name || '');
+                      setBio(profile?.bio || '');
+                    }}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Display Name</p>
-                  <p className="font-medium">{profile.display_name}</p>
+                  <h3 className="text-sm font-medium text-muted-foreground">Display Name</h3>
+                  <p>{profile?.display_name}</p>
                 </div>
-                
                 <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-medium">{profile.email}</p>
+                  <h3 className="text-sm font-medium text-muted-foreground">Email</h3>
+                  <p>{profile?.email}</p>
                 </div>
-                
                 <div>
-                  <p className="text-sm text-muted-foreground">User Number</p>
-                  <p className="font-medium">#{profile.user_number}</p>
+                  <h3 className="text-sm font-medium text-muted-foreground">User Number</h3>
+                  <p>#{profile?.user_number}</p>
                 </div>
-                
                 <div>
-                  <p className="text-sm text-muted-foreground">Bio</p>
-                  <p className="font-medium">{profile.bio || 'No bio set'}</p>
+                  <h3 className="text-sm font-medium text-muted-foreground">Bio</h3>
+                  <p>{profile?.bio}</p>
                 </div>
+                <Button onClick={() => setIsEditing(true)} className="w-full">
+                  Edit Profile
+                </Button>
               </div>
             )}
           </CardContent>
@@ -178,43 +237,41 @@ const ProfilePage = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {receivedGifts.length > 0 ? (
-              <div className="grid grid-cols-3 gap-4">
-                {receivedGifts.map((gift) => (
-                  <div 
-                    key={gift.id} 
-                    className={`text-center p-3 rounded-lg relative ${
-                      gift.is_legendary
-                        ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 dark:from-yellow-900 dark:to-yellow-800'
-                        : gift.gift_type === 'ultra'
-                        ? 'bg-gradient-to-br from-red-100 to-red-200 dark:from-red-900 dark:to-red-800 animate-pulse'
-                        : 'bg-muted'
+            {gifts.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {gifts.map((gift, index) => (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg border-2 text-center ${
+                      gift.is_legendary 
+                        ? 'border-yellow-400 bg-yellow-50' 
+                        : 'border-red-400 bg-red-50'
                     }`}
                   >
-                    {gift.is_legendary && (
-                      <div className="absolute -top-1 -right-1 text-xs">
-                        <Crown className="w-3 h-3 text-yellow-600" />
-                      </div>
-                    )}
-                    {gift.gift_type === 'ultra' && (
-                      <div className="absolute -top-1 -right-1 text-xs">
-                        <Zap className="w-3 h-3 text-red-600" />
-                      </div>
-                    )}
-                    <div 
-                      className={`text-2xl mb-1 ${
-                        gift.is_legendary ? 'animate-bounce-gift' : gift.gift_type === 'ultra' ? 'animate-bounce' : ''
-                      }`}
-                    >
-                      {gift.gift_emoji}
+                    <div className="text-2xl mb-2">{gift.gift_emoji}</div>
+                    <div className="font-medium text-sm">
+                      {gift.count > 1 ? `${gift.count}x ` : ''}{gift.gift_name}
                     </div>
-                    <p className="text-xs font-medium">{gift.gift_name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">From {gift.sender?.display_name}</p>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      From {gift.sender_name}
+                    </div>
+                    {gift.is_legendary && (
+                      <Badge className="bg-yellow-500 text-black mt-2">
+                        <Crown className="w-3 h-3 mr-1" />
+                        Legendary
+                      </Badge>
+                    )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-muted-foreground text-center py-4">No gifts received yet</p>
+              <div className="text-center py-8">
+                <Gift className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">No gifts received yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Gifts you receive will be displayed here
+                </p>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -227,41 +284,23 @@ const ProfilePage = () => {
               Settings
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <button 
-                className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between"
-                onClick={() => navigate('/settings')}
-              >
-                <span>App Settings</span>
-                <span className="text-muted-foreground">›</span>
-              </button>
-              
-              <button 
-                className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between"
-                onClick={() => navigate('/privacy')}
-              >
-                <span>Privacy Settings</span>
-                <span className="text-muted-foreground">›</span>
-              </button>
-              
-              <button className="w-full text-left p-3 hover:bg-muted rounded-lg flex items-center justify-between">
-                <span>Notification Preferences</span>
-                <span className="text-muted-foreground">›</span>
-              </button>
-            </div>
+          <CardContent className="space-y-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => navigate('/settings')}
+            >
+              App Settings
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => navigate('/privacy')}
+            >
+              Privacy Settings
+            </Button>
           </CardContent>
         </Card>
-
-        {/* Logout */}
-        <Button
-          onClick={logout}
-          variant="destructive"
-          className="w-full"
-        >
-          <LogOut className="w-4 h-4 mr-2" />
-          Sign Out
-        </Button>
       </div>
     </div>
   );

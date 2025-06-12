@@ -25,7 +25,6 @@ interface ChatMember {
     display_name: string;
     user_number: string;
     is_online: boolean;
-    last_seen: string;
   };
 }
 
@@ -41,7 +40,6 @@ const ChatDetailPage = () => {
   const [showTipModal, setShowTipModal] = useState(false);
   const [tipAmount, setTipAmount] = useState('');
   const [loading, setLoading] = useState(true);
-  const [lastReadMessageId, setLastReadMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -153,8 +151,7 @@ const ChatDetailPage = () => {
           profiles (
             display_name,
             user_number,
-            is_online,
-            last_seen
+            is_online
           )
         `)
         .eq('chat_id', chatId);
@@ -314,17 +311,6 @@ const ChatDetailPage = () => {
     
     if (otherMember.profiles.is_online) {
       return 'Online';
-    }
-    
-    if (otherMember.profiles.last_seen) {
-      const lastSeen = new Date(otherMember.profiles.last_seen);
-      const now = new Date();
-      const diffMinutes = Math.floor((now.getTime() - lastSeen.getTime()) / (1000 * 60));
-      
-      if (diffMinutes < 5) return 'Just now';
-      if (diffMinutes < 60) return `${diffMinutes}m ago`;
-      if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)}h ago`;
-      return `${Math.floor(diffMinutes / 1440)}d ago`;
     }
     
     return 'Offline';

@@ -7,18 +7,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { MessageCircle, Users, Search, Crown, Zap, DollarSign } from 'lucide-react';
+import { MessageCircle, Search, DollarSign } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
-interface OnlineUser {
+interface SearchUser {
   id: string;
   display_name: string;
   user_number: string;
-  is_online: boolean;
   profile_picture: string;
   has_legendary_badge: boolean;
   has_ultra_badge: boolean;
-  coin_balance: number;
 }
 
 interface RecentChat {
@@ -38,14 +36,13 @@ const HomePage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<OnlineUser[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     if (user) {
-      fetchOnlineUsers();
       fetchRecentChats();
       updateUserOnlineStatus(true);
     }
@@ -72,24 +69,6 @@ const HomePage = () => {
         .eq('id', user.id);
     } catch (error) {
       console.error('Error updating online status:', error);
-    }
-  };
-
-  const fetchOnlineUsers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, display_name, user_number, is_online, profile_picture, has_legendary_badge, has_ultra_badge, coin_balance')
-        .neq('id', user?.id)
-        .eq('is_online', true)
-        .limit(10);
-
-      if (error) throw error;
-      setOnlineUsers(data || []);
-    } catch (error) {
-      console.error('Error fetching online users:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -161,16 +140,19 @@ const HomePage = () => {
       }
     } catch (error) {
       console.error('Error fetching recent chats:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const searchUsers = async () => {
     if (!searchTerm || searchTerm.length < 2) return;
     
+    setIsSearching(true);
     try {
       let query = supabase
         .from('profiles')
-        .select('id, display_name, user_number, is_online, profile_picture, has_legendary_badge, has_ultra_badge, coin_balance')
+        .select('id, display_name, user_number, profile_picture, has_legendary_badge, has_ultra_badge')
         .neq('id', user?.id);
 
       // Check if search term starts with # for user number search
@@ -188,6 +170,8 @@ const HomePage = () => {
     } catch (error) {
       console.error('Error searching users:', error);
       setSearchResults([]);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -195,7 +179,9 @@ const HomePage = () => {
     if (!user) return;
 
     try {
-      // Check if chat already exists
+      console.log('Creating chat with user:', otherUserId);
+      
+      // Check if chat already exists between these two users
       const { data: existingMemberships } = await supabase
         .from('chat_members')
         .select('chat_id')
@@ -210,12 +196,15 @@ const HomePage = () => {
             .eq('user_id', otherUserId);
 
           if (otherMemberships && otherMemberships.length > 0) {
+            console.log('Existing chat found:', membership.chat_id);
             navigate(`/chats/${membership.chat_id}`);
             return;
           }
         }
       }
 
+      console.log('Creating new chat...');
+      
       // Create new chat
       const { data: newChat, error: chatError } = await supabase
         .from('chats')
@@ -226,18 +215,39 @@ const HomePage = () => {
         .select()
         .single();
 
-      if (chatError) throw chatError;
+      if (chatError) {
+        console.error('Chat creation error:', chatError);
+        throw chatError;
+      }
 
-      // Add members
+      console.log('New chat created:', newChat.id);
+
+      // Add both users as members
       const { error: memberError } = await supabase
         .from('chat_members')
         .insert([
-          { chat_id: newChat.id, user_id: user.id },
-          { chat_id: newChat.id, user_id: otherUserId }
+          { 
+            chat_id: newChat.id, 
+            user_id: user.id,
+            joined_at: new Date().toISOString(),
+            last_read_at: new Date().toISOString(),
+            unread_count: 0
+          },
+          { 
+            chat_id: newChat.id, 
+            user_id: otherUserId,
+            joined_at: new Date().toISOString(),
+            last_read_at: new Date().toISOString(),
+            unread_count: 0
+          }
         ]);
 
-      if (memberError) throw memberError;
+      if (memberError) {
+        console.error('Member addition error:', memberError);
+        throw memberError;
+      }
 
+      console.log('Members added successfully');
       navigate(`/chats/${newChat.id}`);
       
     } catch (error) {
@@ -290,6 +300,11 @@ const HomePage = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
           />
+          {isSearching && (
+            <div className="absolute right-3 top-3">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+            </div>
+          )}
         </div>
 
         {/* Search Results */}
@@ -297,50 +312,53 @@ const HomePage = () => {
           <Card className="mt-2">
             <CardContent className="p-2">
               <div className="space-y-1">
-                {searchResults.map((user) => (
+                {searchResults.map((searchUser) => (
                   <div
-                    key={user.id}
+                    key={searchUser.id}
                     className="flex items-center justify-between p-2 hover:bg-muted rounded cursor-pointer"
-                    onClick={() => createDirectChat(user.id)}
+                    onClick={() => createDirectChat(searchUser.id)}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="relative">
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                          {user.profile_picture ? (
-                            <img 
-                              src={user.profile_picture} 
-                              alt="Profile" 
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span className="text-sm font-medium">{user.display_name[0]}</span>
-                          )}
-                        </div>
-                        {user.is_online && (
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                        {searchUser.profile_picture ? (
+                          <img 
+                            src={searchUser.profile_picture} 
+                            alt="Profile" 
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-sm font-medium">{searchUser.display_name[0]}</span>
                         )}
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
-                          <p className="font-medium">{user.display_name}</p>
-                          {user.has_legendary_badge && (
-                            <Badge className="bg-yellow-500 text-black">
-                              <Crown className="w-3 h-3" />
+                          <p className="font-medium">{searchUser.display_name}</p>
+                          {searchUser.has_legendary_badge && (
+                            <Badge className="bg-yellow-500 text-black text-xs">
+                              👑
                             </Badge>
                           )}
-                          {user.has_ultra_badge && (
-                            <Badge className="bg-red-500 text-white animate-pulse">
-                              <Zap className="w-3 h-3" />
+                          {searchUser.has_ultra_badge && (
+                            <Badge className="bg-red-500 text-white animate-pulse text-xs">
+                              ⚡
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">#{user.user_number}</p>
+                        <p className="text-sm text-muted-foreground">#{searchUser.user_number}</p>
                       </div>
                     </div>
                     <MessageCircle className="w-4 h-4 text-primary" />
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        {searchTerm.length >= 2 && searchResults.length === 0 && !isSearching && (
+          <Card className="mt-2">
+            <CardContent className="p-4 text-center">
+              <p className="text-muted-foreground">No users found</p>
             </CardContent>
           </Card>
         )}
@@ -364,20 +382,15 @@ const HomePage = () => {
                   onClick={() => navigate(`/chats/${chat.id}`)}
                 >
                   <div className="flex items-center space-x-3">
-                    <div className="relative">
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                        {chat.other_member?.profile_picture ? (
-                          <img 
-                            src={chat.other_member.profile_picture} 
-                            alt="Profile" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <MessageCircle className="w-6 h-6 text-primary" />
-                        )}
-                      </div>
-                      {chat.other_member?.is_online && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                      {chat.other_member?.profile_picture ? (
+                        <img 
+                          src={chat.other_member.profile_picture} 
+                          alt="Profile" 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <MessageCircle className="w-6 h-6 text-primary" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -404,58 +417,6 @@ const HomePage = () => {
             </CardContent>
           </Card>
         )}
-
-        {/* Online Users */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Users className="w-5 h-5 mr-2" />
-              Online Users ({onlineUsers.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {onlineUsers.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3">
-                {onlineUsers.map((user) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center space-x-3 p-3 hover:bg-muted rounded cursor-pointer"
-                    onClick={() => createDirectChat(user.id)}
-                  >
-                    <div className="relative">
-                      <div className="w-10 h-10 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                        {user.profile_picture ? (
-                          <img 
-                            src={user.profile_picture} 
-                            alt="Profile" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-sm font-medium">{user.display_name[0]}</span>
-                        )}
-                      </div>
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-1">
-                        <p className="font-medium truncate text-sm">{user.display_name}</p>
-                        {user.has_legendary_badge && (
-                          <Crown className="w-3 h-3 text-yellow-500" />
-                        )}
-                        {user.has_ultra_badge && (
-                          <Zap className="w-3 h-3 text-red-500" />
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">#{user.user_number}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-center text-muted-foreground py-4">No users online</p>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-4">
