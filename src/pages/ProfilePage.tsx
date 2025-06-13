@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,8 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { Crown, Zap, Gift, Settings, Shield } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Crown, Zap, Gift, LogOut } from 'lucide-react';
 import ProfilePictureUpload from '@/components/ProfilePictureUpload';
 
 interface GiftData {
@@ -21,9 +21,8 @@ interface GiftData {
 }
 
 const ProfilePage = () => {
-  const { user, profile, updateProfile } = useAuth();
+  const { user, profile, updateProfile, signOut } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -56,7 +55,6 @@ const ProfilePage = () => {
 
       if (error) throw error;
 
-      // Group gifts by type and count them
       const giftMap = new Map();
       
       (data || []).forEach((gift: any) => {
@@ -64,7 +62,6 @@ const ProfilePage = () => {
         if (giftMap.has(key)) {
           const existing = giftMap.get(key);
           existing.count += 1;
-          // Keep the most recent sender name
         } else {
           giftMap.set(key, {
             gift_name: gift.gift_name,
@@ -109,6 +106,19 @@ const ProfilePage = () => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+      toast({
+        title: "Error",
+        description: "Failed to sign out. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -128,9 +138,11 @@ const ProfilePage = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate('/settings')}
+                onClick={handleLogout}
+                className="text-red-600 hover:text-red-700"
               >
-                <Settings className="w-4 h-4" />
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
               </Button>
             </div>
           </CardHeader>
@@ -150,12 +162,6 @@ const ProfilePage = () => {
                     <Badge className="bg-red-500 text-white animate-pulse">
                       <Zap className="w-3 h-3 mr-1" />
                       Ultra
-                    </Badge>
-                  )}
-                  {profile?.is_admin && (
-                    <Badge className="bg-purple-500 text-white">
-                      <Shield className="w-3 h-3 mr-1" />
-                      Admin
                     </Badge>
                   )}
                 </div>
@@ -238,25 +244,29 @@ const ProfilePage = () => {
           </CardHeader>
           <CardContent>
             {gifts.length > 0 ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 {gifts.map((gift, index) => (
                   <div
                     key={index}
-                    className={`p-4 rounded-lg border-2 text-center ${
+                    className={`p-4 rounded-lg border-2 flex items-center justify-between ${
                       gift.is_legendary 
                         ? 'border-yellow-400 bg-yellow-50' 
                         : 'border-red-400 bg-red-50'
                     }`}
                   >
-                    <div className="text-2xl mb-2">{gift.gift_emoji}</div>
-                    <div className="font-medium text-sm">
-                      {gift.count > 1 ? `${gift.count}x ` : ''}{gift.gift_name}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      From {gift.sender_name}
+                    <div className="flex items-center space-x-3">
+                      <div className="text-3xl">{gift.gift_emoji}</div>
+                      <div>
+                        <div className="font-medium">
+                          {gift.count > 1 ? `${gift.count}x ` : ''}{gift.gift_name}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          From {gift.sender_name}
+                        </div>
+                      </div>
                     </div>
                     {gift.is_legendary && (
-                      <Badge className="bg-yellow-500 text-black mt-2">
+                      <Badge className="bg-yellow-500 text-black">
                         <Crown className="w-3 h-3 mr-1" />
                         Legendary
                       </Badge>
@@ -273,32 +283,6 @@ const ProfilePage = () => {
                 </p>
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Settings className="w-5 h-5 mr-2" />
-              Settings
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => navigate('/settings')}
-            >
-              App Settings
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => navigate('/privacy')}
-            >
-              Privacy Settings
-            </Button>
           </CardContent>
         </Card>
       </div>
