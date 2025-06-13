@@ -8,7 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { Crown, Zap, Gift, LogOut } from 'lucide-react';
+import { Crown, Zap, Gift, LogOut, Settings, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import ProfilePictureUpload from '@/components/ProfilePictureUpload';
 
 interface GiftData {
@@ -21,8 +22,9 @@ interface GiftData {
 }
 
 const ProfilePage = () => {
-  const { user, profile, updateProfile, signOut } = useAuth();
+  const { user, profile, updateProfile, logout } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -108,7 +110,7 @@ const ProfilePage = () => {
 
   const handleLogout = async () => {
     try {
-      await signOut();
+      await logout();
     } catch (error) {
       console.error('Error signing out:', error);
       toast({
@@ -234,6 +236,26 @@ const ProfilePage = () => {
           </CardContent>
         </Card>
 
+        {/* Settings & Privacy */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Settings className="w-5 h-5 mr-2" />
+              Settings & Privacy
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => navigate('/privacy')}
+            >
+              <Shield className="w-4 h-4 mr-2" />
+              Privacy & Settings
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Gift Showcase */}
         <Card>
           <CardHeader>
@@ -245,7 +267,7 @@ const ProfilePage = () => {
           <CardContent>
             {gifts.length > 0 ? (
               <div className="grid grid-cols-1 gap-4">
-                {gifts.map((gift, index) => (
+                {gifts.slice(0, 3).map((gift, index) => (
                   <div
                     key={index}
                     className={`p-4 rounded-lg border-2 flex items-center justify-between ${
@@ -273,6 +295,14 @@ const ProfilePage = () => {
                     )}
                   </div>
                 ))}
+                
+                {gifts.length > 3 && (
+                  <div className="text-center p-4 border-2 border-dashed border-muted-foreground/20 rounded-lg">
+                    <p className="text-muted-foreground">
+                      +{gifts.length - 3} more gifts
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
