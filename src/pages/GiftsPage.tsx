@@ -112,26 +112,14 @@ const GiftsPage = () => {
           gift_emoji,
           gift_name,
           price,
-          profiles!gifts_receiver_id_fkey(display_name)
+          receiver:receiver_id(display_name)
         `)
         .eq('sender_id', user.id)
         .order('created_at', { ascending: false })
         .limit(6);
 
       if (error) throw error;
-      
-      // Transform the data to match our SentGift interface
-      const transformedData = (data || []).map(gift => ({
-        id: gift.id,
-        gift_emoji: gift.gift_emoji,
-        gift_name: gift.gift_name,
-        price: gift.price,
-        receiver: {
-          display_name: gift.profiles?.display_name || 'Unknown'
-        }
-      }));
-      
-      setMyGifts(transformedData);
+      setMyGifts(data || []);
     } catch (error) {
       console.error('Error fetching my gifts:', error);
     }

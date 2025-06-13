@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { MessageCircle, Plus, Search, Users, Crown, Zap, Check, CheckCheck } from 'lucide-react';
+import { MessageCircle, Plus, Search, Users, Crown, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface Chat {
@@ -19,13 +19,12 @@ interface Chat {
     content: string;
     created_at: string;
     sender_name: string;
-    sender_id: string;
-    is_read: boolean;
   };
   unread_count: number;
   other_member?: {
     display_name: string;
     user_number: string;
+    is_online: boolean;
     profile_picture: string;
     has_legendary_badge: boolean;
     has_ultra_badge: boolean;
@@ -47,41 +46,11 @@ const ChatsPage = () => {
   useEffect(() => {
     if (user) {
       fetchChats();
-      
-      const channel = supabase
-        .channel('chats-updates')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'messages',
-          },
-          () => {
-            fetchChats();
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chat_members',
-          },
-          () => {
-            fetchChats();
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
     }
   }, [user]);
 
   useEffect(() => {
-    if (newChatUser.length >= 2) {
+    if (newChatUser.length >= 3) {
       searchUsers();
     } else {
       setUsers([]);
@@ -98,7 +67,6 @@ const ChatsPage = () => {
         .select(`
           chat_id,
           unread_count,
-          last_read_at,
           chats (
             id,
             name,
@@ -140,6 +108,7 @@ const ChatsPage = () => {
                   profiles (
                     display_name,
                     user_number,
+                    is_online,
                     profile_picture,
                     has_legendary_badge,
                     has_ultra_badge
@@ -153,35 +122,21 @@ const ChatsPage = () => {
               }
             }
 
-            const lastMessage = messages?.[0];
-            const isRead = lastMessage ? 
-              (lastMessage.sender_id === user.id || 
-               (membership.last_read_at && new Date(membership.last_read_at) >= new Date(lastMessage.created_at))) 
-              : true;
-
             return {
               id: chat.id,
               name: chat.name || (otherMember?.display_name || 'Unknown User'),
               is_group: chat.is_group,
               created_at: chat.created_at,
-              last_message: lastMessage ? {
-                content: lastMessage.content,
-                created_at: lastMessage.created_at,
-                sender_name: lastMessage.profiles?.display_name || 'Unknown',
-                sender_id: lastMessage.sender_id,
-                is_read: isRead
+              last_message: messages?.[0] ? {
+                content: messages[0].content,
+                created_at: messages[0].created_at,
+                sender_name: messages[0].profiles?.display_name || 'Unknown'
               } : undefined,
               unread_count: membership.unread_count || 0,
               other_member: otherMember
             };
           })
         );
-
-        chatsWithDetails.sort((a, b) => {
-          const aTime = a.last_message?.created_at || a.created_at;
-          const bTime = b.last_message?.created_at || b.created_at;
-          return new Date(bTime).getTime() - new Date(aTime).getTime();
-        });
 
         setChats(chatsWithDetails);
       } else {
@@ -196,23 +151,16 @@ const ChatsPage = () => {
   };
 
   const searchUsers = async () => {
-    if (!newChatUser || newChatUser.length < 2) return;
+    if (!newChatUser || newChatUser.length < 3) return;
     
     setSearchingUsers(true);
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('id, display_name, user_number, profile_picture, has_legendary_badge, has_ultra_badge')
-        .neq('id', user?.id);
-
-      if (newChatUser.startsWith('#')) {
-        const userNumber = newChatUser.substring(1);
-        query = query.ilike('user_number', `%${userNumber}%`);
-      } else {
-        query = query.or(`display_name.ilike.%${newChatUser}%,user_number.ilike.%${newChatUser}%`);
-      }
-
-      const { data, error } = await query.limit(10);
+        .select('id, display_name, user_number, is_online, profile_picture, has_legendary_badge, has_ultra_badge')
+        .neq('id', user?.id)
+        .or(`display_name.ilike.%${newChatUser}%,user_number.ilike.%${newChatUser}%`)
+        .limit(10);
 
       if (error) throw error;
       setUsers(data || []);
@@ -228,51 +176,27 @@ const ChatsPage = () => {
     if (!user) return;
 
     try {
-      console.log('Creating chat with user:', otherUserId);
-      
-      // Check if chat already exists between these two users
-      const { data: existingChats, error: existingError } = await supabase
+      const { data: existingMemberships } = await supabase
         .from('chat_members')
-        .select(`
-          chat_id,
-          chats!inner (
-            id,
-            is_group
-          )
-        `)
+        .select('chat_id')
         .eq('user_id', user.id);
 
-      if (existingError) {
-        console.error('Error checking existing chats:', existingError);
-        throw existingError;
-      }
-
-      if (existingChats && existingChats.length > 0) {
-        for (const chatMember of existingChats) {
-          const { data: otherMembers, error: otherError } = await supabase
+      if (existingMemberships) {
+        for (const membership of existingMemberships) {
+          const { data: otherMemberships } = await supabase
             .from('chat_members')
-            .select('user_id, chat_id')
-            .eq('chat_id', chatMember.chat_id)
+            .select('user_id')
+            .eq('chat_id', membership.chat_id)
             .eq('user_id', otherUserId);
 
-          if (otherError) {
-            console.error('Error checking other members:', otherError);
-            continue;
-          }
-
-          if (otherMembers && otherMembers.length > 0) {
-            console.log('Chat already exists, navigating to:', chatMember.chat_id);
-            navigate(`/chats/${chatMember.chat_id}`);
+          if (otherMemberships && otherMemberships.length > 0) {
+            navigate(`/chats/${membership.chat_id}`);
             setShowNewChatModal(false);
-            setNewChatUser('');
-            setUsers([]);
             return;
           }
         }
       }
 
-      // Create new chat
-      console.log('Creating new chat...');
       const { data: newChat, error: chatError } = await supabase
         .from('chats')
         .insert({
@@ -282,53 +206,27 @@ const ChatsPage = () => {
         .select()
         .single();
 
-      if (chatError) {
-        console.error('Error creating chat:', chatError);
-        throw chatError;
-      }
+      if (chatError) throw chatError;
 
-      console.log('Chat created successfully:', newChat.id);
-
-      // Add both members to the chat
       const { error: memberError } = await supabase
         .from('chat_members')
         .insert([
-          { 
-            chat_id: newChat.id, 
-            user_id: user.id,
-            unread_count: 0,
-            last_read_at: new Date().toISOString()
-          },
-          { 
-            chat_id: newChat.id, 
-            user_id: otherUserId,
-            unread_count: 0,
-            last_read_at: new Date().toISOString()
-          }
+          { chat_id: newChat.id, user_id: user.id },
+          { chat_id: newChat.id, user_id: otherUserId }
         ]);
 
-      if (memberError) {
-        console.error('Error adding members:', memberError);
-        throw memberError;
-      }
+      if (memberError) throw memberError;
 
-      console.log('Members added successfully');
-      
       navigate(`/chats/${newChat.id}`);
       setShowNewChatModal(false);
       setNewChatUser('');
       setUsers([]);
       
-      toast({
-        title: "Success",
-        description: "Chat created successfully!",
-      });
-      
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating chat:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create chat. Please try again.",
+        description: "Failed to create chat. Please try again.",
         variant: "destructive",
       });
     }
@@ -348,6 +246,7 @@ const ChatsPage = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      {/* Header */}
       <div className="bg-card p-4 border-b border-border flex items-center justify-between">
         <h1 className="text-xl font-bold text-foreground">Chats</h1>
         <Button
@@ -360,6 +259,7 @@ const ChatsPage = () => {
       </div>
 
       <div className="p-4">
+        {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
@@ -370,14 +270,13 @@ const ChatsPage = () => {
           />
         </div>
 
+        {/* Chats List */}
         <div className="space-y-2">
           {filteredChats.length > 0 ? (
             filteredChats.map((chat) => (
               <Card
                 key={chat.id}
-                className={`cursor-pointer hover:shadow-md transition-shadow ${
-                  chat.unread_count > 0 ? 'bg-green-50 border-green-200' : ''
-                }`}
+                className="cursor-pointer hover:shadow-md transition-shadow"
                 onClick={() => navigate(`/chats/${chat.id}`)}
               >
                 <CardContent className="p-4">
@@ -396,6 +295,9 @@ const ChatsPage = () => {
                           <MessageCircle className="w-6 h-6 text-primary" />
                         )}
                       </div>
+                      {chat.other_member?.is_online && (
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
+                      )}
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -415,37 +317,20 @@ const ChatsPage = () => {
                             </Badge>
                           )}
                         </div>
-                        <div className="flex items-center space-x-2">
-                          {chat.last_message && (
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(chat.last_message.created_at).toLocaleDateString()}
-                            </span>
-                          )}
-                          {chat.last_message && chat.last_message.sender_id === user?.id && (
-                            <div className="flex">
-                              {chat.last_message.is_read ? (
-                                <CheckCheck className="w-4 h-4 text-blue-500" />
-                              ) : (
-                                <Check className="w-4 h-4 text-gray-400" />
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        {chat.last_message && (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(chat.last_message.created_at).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                       
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          {chat.last_message ? (
-                            <p className={`text-sm truncate ${
-                              chat.unread_count > 0 ? 'font-medium text-foreground' : 'text-muted-foreground'
-                            }`}>
-                              {chat.last_message.sender_name}: {chat.last_message.content}
-                            </p>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No messages yet</p>
-                          )}
-                        </div>
-                      </div>
+                      {chat.last_message ? (
+                        <p className="text-sm text-muted-foreground truncate">
+                          {chat.last_message.sender_name}: {chat.last_message.content}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No messages yet</p>
+                      )}
                     </div>
                     
                     {chat.unread_count > 0 && (
@@ -469,6 +354,7 @@ const ChatsPage = () => {
         </div>
       </div>
 
+      {/* New Chat Modal */}
       {showNewChatModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-80 mx-4 max-h-96 overflow-hidden">
@@ -477,7 +363,7 @@ const ChatsPage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
-                placeholder="Search by name or #usernumber..."
+                placeholder="Search by name or user number (min 3 chars)..."
                 value={newChatUser}
                 onChange={(e) => setNewChatUser(e.target.value)}
               />
@@ -489,50 +375,51 @@ const ChatsPage = () => {
               )}
               
               <div className="max-h-48 overflow-y-auto space-y-2">
-                {users.map((searchUser) => (
+                {users.map((user) => (
                   <div
-                    key={searchUser.id}
+                    key={user.id}
                     className="flex items-center justify-between p-2 hover:bg-muted rounded cursor-pointer"
-                    onClick={() => createDirectChat(searchUser.id)}
+                    onClick={() => createDirectChat(user.id)}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="relative">
-                        <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                          {searchUser.profile_picture ? (
-                            <img 
-                              src={searchUser.profile_picture} 
-                              alt="Profile" 
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span className="text-xs">{searchUser.display_name[0]}</span>
-                          )}
-                        </div>
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                        {user.profile_picture ? (
+                          <img 
+                            src={user.profile_picture} 
+                            alt="Profile" 
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs">{user.display_name[0]}</span>
+                        )}
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
-                          <p className="font-medium">{searchUser.display_name}</p>
-                          {searchUser.has_legendary_badge && (
+                          <p className="font-medium">{user.display_name}</p>
+                          {user.has_legendary_badge && (
                             <Badge className="bg-yellow-500 text-black">
                               <Crown className="w-3 h-3" />
                             </Badge>
                           )}
-                          {searchUser.has_ultra_badge && (
+                          {user.has_ultra_badge && (
                             <Badge className="bg-red-500 text-white animate-pulse">
                               <Zap className="w-3 h-3" />
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">#{searchUser.user_number}</p>
+                        <p className="text-sm text-muted-foreground">#{user.user_number}</p>
                       </div>
                     </div>
+                    {user.is_online && (
+                      <div className="w-3 h-3 bg-green-500 rounded-full" />
+                    )}
                   </div>
                 ))}
-                {newChatUser.length >= 2 && users.length === 0 && !searchingUsers && (
+                {newChatUser.length >= 3 && users.length === 0 && !searchingUsers && (
                   <p className="text-center text-muted-foreground py-4">No users found</p>
                 )}
-                {newChatUser.length < 2 && (
-                  <p className="text-center text-muted-foreground py-4">Type at least 2 characters to search</p>
+                {newChatUser.length < 3 && (
+                  <p className="text-center text-muted-foreground py-4">Type at least 3 characters to search</p>
                 )}
               </div>
               

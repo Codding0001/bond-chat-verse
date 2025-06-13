@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
@@ -27,33 +27,24 @@ function App() {
       <SettingsProvider>
         <Router>
           <div className="min-h-screen bg-background">
-            <Routes>
-              {/* Public route for login */}
-              <Route path="/login" element={<LoginPage />} />
-              
-              {/* Protected routes */}
-              <Route path="/*" element={
-                <AuthGuard>
-                  <Routes>
-                    <Route path="/" element={<Navigate to="/home" replace />} />
-                    <Route path="/home" element={<HomePage />} />
-                    <Route path="/chats" element={<ChatsPage />} />
-                    <Route path="/chats/:chatId" element={<ChatDetailPage />} />
-                    <Route path="/calls" element={<CallsPage />} />
-                    <Route path="/profile" element={<ProfilePage />} />
-                    <Route path="/gifts" element={<GiftsPage />} />
-                    <Route path="/wallet" element={<WalletPage />} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                    <Route path="/privacy" element={<PrivacyPage />} />
-                    <Route path="/admin" element={<AdminDashboardPage />} />
-                    <Route path="/report" element={<ReportUserPage />} />
-                    <Route path="/appeal" element={<BanAppealPage />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                  <BottomNavigation />
-                </AuthGuard>
-              } />
-            </Routes>
+            <AuthGuard>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/chats" element={<ChatsPage />} />
+                <Route path="/chats/:chatId" element={<ChatDetailPage />} />
+                <Route path="/calls" element={<CallsPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/gifts" element={<GiftsPage />} />
+                <Route path="/wallet" element={<WalletPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/admin" element={<AdminDashboardPage />} />
+                <Route path="/report" element={<ReportUserPage />} />
+                <Route path="/appeal" element={<BanAppealPage />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+              <BottomNavigation />
+            </AuthGuard>
             <Toaster />
           </div>
         </Router>

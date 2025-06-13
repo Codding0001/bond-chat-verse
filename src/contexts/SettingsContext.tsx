@@ -9,7 +9,6 @@ interface UserSettings {
   user_id: string;
   theme: 'light' | 'dark';
   chat_wallpaper_color: string;
-  profile_bg_color: string;
   notification_sound: boolean;
   created_at: string;
   updated_at: string;
@@ -52,6 +51,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       
       if (data) {
         setSettings(data as UserSettings);
+        // Apply theme to document
         document.documentElement.className = data.theme;
       }
     } catch (error) {
@@ -75,6 +75,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const updatedSettings = { ...settings, ...updates };
       setSettings(updatedSettings);
 
+      // Apply theme if updated
       if (updates.theme) {
         document.documentElement.className = updates.theme;
       }
@@ -94,6 +95,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const playNotificationSound = () => {
     if (settings?.notification_sound) {
+      // Create a simple notification sound
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
