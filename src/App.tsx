@@ -30,6 +30,7 @@ function App() {
             <AuthGuard>
               <Routes>
                 <Route path="/" element={<HomePage />} />
+                <Route path="/home" element={<HomePage />} />
                 <Route path="/chats" element={<ChatsPage />} />
                 <Route path="/chats/:chatId" element={<ChatDetailPage />} />
                 <Route path="/calls" element={<CallsPage />} />
