@@ -547,6 +547,10 @@ export type Database = {
         Args: { user_id_param: string }
         Returns: boolean
       }
+      user_is_chat_member: {
+        Args: { chat_id_param: string; user_id_param: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
