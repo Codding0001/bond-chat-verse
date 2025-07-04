@@ -116,6 +116,7 @@ export type Database = {
         Row: {
           chat_id: string | null
           id: string
+          is_pinned: boolean | null
           joined_at: string | null
           last_read_at: string | null
           unread_count: number | null
@@ -124,6 +125,7 @@ export type Database = {
         Insert: {
           chat_id?: string | null
           id?: string
+          is_pinned?: boolean | null
           joined_at?: string | null
           last_read_at?: string | null
           unread_count?: number | null
@@ -132,6 +134,7 @@ export type Database = {
         Update: {
           chat_id?: string | null
           id?: string
+          is_pinned?: boolean | null
           joined_at?: string | null
           last_read_at?: string | null
           unread_count?: number | null
@@ -304,6 +307,8 @@ export type Database = {
           profile_picture: string | null
           updated_at: string | null
           user_number: string
+          verification_badge_expires_at: string | null
+          verification_badge_type: string | null
         }
         Insert: {
           bio?: string | null
@@ -320,6 +325,8 @@ export type Database = {
           profile_picture?: string | null
           updated_at?: string | null
           user_number: string
+          verification_badge_expires_at?: string | null
+          verification_badge_type?: string | null
         }
         Update: {
           bio?: string | null
@@ -336,6 +343,8 @@ export type Database = {
           profile_picture?: string | null
           updated_at?: string | null
           user_number?: string
+          verification_badge_expires_at?: string | null
+          verification_badge_type?: string | null
         }
         Relationships: []
       }
@@ -529,6 +538,41 @@ export type Database = {
             foreignKeyName: "user_settings_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      verification_purchases: {
+        Row: {
+          badge_type: string
+          cost: number
+          expires_at: string | null
+          id: string
+          purchased_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          badge_type: string
+          cost: number
+          expires_at?: string | null
+          id?: string
+          purchased_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          badge_type?: string
+          cost?: number
+          expires_at?: string | null
+          id?: string
+          purchased_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "verification_purchases_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },

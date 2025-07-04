@@ -101,21 +101,25 @@ const ChatsPage = () => {
 
             let otherMember = null;
             if (!chat.is_group) {
-              const { data: otherMembers } = await supabase
-                .from('chat_members')
-                .select(`
-                  user_id,
-                  profiles (
-                    display_name,
-                    user_number,
-                    is_online,
-                    profile_picture,
-                    has_legendary_badge,
-                    has_ultra_badge
-                  )
-                `)
-                .eq('chat_id', chat.id)
-                .neq('user_id', user.id);
+            const { data: otherMembers } = await supabase
+              .from('chat_members')
+              .select(`
+                user_id,
+                is_pinned,
+                profiles (
+                  display_name,
+                  user_number,
+                  is_online,
+                  profile_picture,
+                  has_legendary_badge,
+                  has_ultra_badge,
+                  legendary_badge_color,
+                  verification_badge_type,
+                  verification_badge_expires_at
+                )
+              `)
+              .eq('chat_id', chat.id)
+              .neq('user_id', user.id);
 
               if (otherMembers && otherMembers.length > 0) {
                 otherMember = otherMembers[0].profiles;

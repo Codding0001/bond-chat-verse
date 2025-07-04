@@ -18,6 +18,7 @@ import PrivacyPage from '@/pages/PrivacyPage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import ReportUserPage from '@/pages/ReportUserPage';
 import BanAppealPage from '@/pages/BanAppealPage';
+import VerificationPage from '@/pages/VerificationPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
 
@@ -35,6 +36,7 @@ function App() {
                 <Route path="/chats/:chatId" element={<ChatDetailPage />} />
                 <Route path="/calls" element={<CallsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/verification" element={<VerificationPage />} />
                 <Route path="/gifts" element={<GiftsPage />} />
                 <Route path="/wallet" element={<WalletPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

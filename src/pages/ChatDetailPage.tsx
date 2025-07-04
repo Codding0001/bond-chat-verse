@@ -7,7 +7,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, Send, DollarSign } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, Pin, PinOff, Image as ImageIcon } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -15,13 +17,21 @@ interface Message {
   sender_id: string;
   created_at: string;
   message_type: string;
+  file_url?: string;
 }
 
 interface ChatMember {
   user_id: string;
+  is_pinned?: boolean;
   profiles: {
     display_name: string;
     user_number: string;
+    profile_picture?: string;
+    has_legendary_badge?: boolean;
+    has_ultra_badge?: boolean;
+    legendary_badge_color?: string;
+    verification_badge_type?: string;
+    verification_badge_expires_at?: string;
   };
 }
 
@@ -37,7 +47,10 @@ const ChatDetailPage = () => {
   const [showTipModal, setShowTipModal] = useState(false);
   const [tipAmount, setTipAmount] = useState('');
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -72,7 +85,6 @@ const ChatDetailPage = () => {
           const newMessage = payload.new as Message;
           setMessages(prev => [...prev, newMessage]);
           
-          // Play sound if message is from another user
           if (newMessage.sender_id !== user?.id) {
             playNotificationSound();
           }
@@ -112,15 +124,26 @@ const ChatDetailPage = () => {
         .from('chat_members')
         .select(`
           user_id,
+          is_pinned,
           profiles (
             display_name,
-            user_number
+            user_number,
+            profile_picture,
+            has_legendary_badge,
+            has_ultra_badge,
+            legendary_badge_color,
+            verification_badge_type,
+            verification_badge_expires_at
           )
         `)
         .eq('chat_id', chatId);
 
       if (error) throw error;
       setChatMembers(data || []);
+      
+      // Check if current user has pinned this chat
+      const currentUserMember = data?.find(m => m.user_id === user?.id);
+      setIsPinned(currentUserMember?.is_pinned || false);
     } catch (error) {
       console.error('Error fetching chat members:', error);
     }
@@ -143,6 +166,85 @@ const ChatDetailPage = () => {
     }
   };
 
+  const togglePinChat = async () => {
+    if (!chatId || !user) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_members')
+        .update({ is_pinned: !isPinned })
+        .eq('chat_id', chatId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      
+      setIsPinned(!isPinned);
+      toast({
+        title: isPinned ? "Chat unpinned" : "Chat pinned",
+        description: isPinned ? "Removed from pinned chats" : "Added to pinned chats",
+      });
+    } catch (error) {
+      console.error('Error toggling pin:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update pin status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const uploadFile = async (file: File) => {
+    if (!user || !chatId) return null;
+
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { data, error } = await supabase.storage
+        .from('chat-files')
+        .upload(fileName, file);
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-files')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload file",
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const fileUrl = await uploadFile(file);
+    if (fileUrl) {
+      const messageType = file.type.startsWith('image/') ? 'image' : 'file';
+      
+      await supabase
+        .from('messages')
+        .insert({
+          content: file.name,
+          sender_id: user?.id,
+          chat_id: chatId,
+          message_type: messageType,
+          file_url: fileUrl
+        });
+    }
+  };
+
   const sendMessage = async () => {
     if (!newMessage.trim() || !chatId || !user) return;
 
@@ -157,28 +259,6 @@ const ChatDetailPage = () => {
         });
 
       if (error) throw error;
-
-      // Update unread count for other members
-      const { data: otherMembers } = await supabase
-        .from('chat_members')
-        .select('user_id')
-        .eq('chat_id', chatId)
-        .neq('user_id', user.id);
-
-      if (otherMembers) {
-        for (const member of otherMembers) {
-          await supabase
-            .from('chat_members')
-            .update({ unread_count: (await supabase
-              .from('chat_members')
-              .select('unread_count')
-              .eq('chat_id', chatId)
-              .eq('user_id', member.user_id)
-              .single()).data?.unread_count || 0 + 1 })
-            .eq('chat_id', chatId)
-            .eq('user_id', member.user_id);
-        }
-      }
 
       setNewMessage('');
     } catch (error) {
@@ -205,11 +285,9 @@ const ChatDetailPage = () => {
     }
 
     try {
-      // Get other chat member
       const otherMember = chatMembers.find(m => m.user_id !== user.id);
       if (!otherMember) return;
 
-      // Send tip message
       await supabase
         .from('messages')
         .insert({
@@ -219,10 +297,8 @@ const ChatDetailPage = () => {
           message_type: 'tip'
         });
 
-      // Update coin balances
       await updateCoins(-amount);
 
-      // Get receiver's current balance and update it
       const { data: receiverProfile, error: fetchError } = await supabase
         .from('profiles')
         .select('coin_balance')
@@ -240,7 +316,6 @@ const ChatDetailPage = () => {
 
       if (updateError) throw updateError;
 
-      // Record transaction
       await supabase
         .from('transactions')
         .insert({
@@ -268,24 +343,40 @@ const ChatDetailPage = () => {
     }
   };
 
-  const getOtherMemberName = () => {
-    const otherMember = chatMembers.find(m => m.user_id !== user?.id);
-    return otherMember?.profiles.display_name || 'Chat';
+  const getOtherMember = () => {
+    return chatMembers.find(m => m.user_id !== user?.id);
+  };
+
+  const renderVerificationBadge = (member: ChatMember) => {
+    if (!member.profiles.verification_badge_type) return null;
+    
+    const isExpired = member.profiles.verification_badge_expires_at && 
+      new Date(member.profiles.verification_badge_expires_at) < new Date();
+    
+    if (isExpired) return null;
+
+    return (
+      <Badge variant="secondary" className="bg-blue-500 text-white">
+        <CheckCircle className="w-3 h-3" />
+      </Badge>
+    );
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
+  const otherMember = getOtherMember();
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" 
-         style={{ backgroundColor: settings?.chat_wallpaper_color || 'rgba(255, 255, 255, 1)' }}>
-      {/* Header */}
-      <div className="bg-white p-4 border-b border-gray-200 flex items-center justify-between">
+    <div className="min-h-screen bg-background flex flex-col" 
+         style={{ backgroundColor: settings?.chat_wallpaper_color || undefined }}>
+      {/* Enhanced Header */}
+      <div className="bg-card p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Button 
             variant="ghost" 
@@ -294,31 +385,108 @@ const ChatDetailPage = () => {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h1 className="text-xl font-bold">{getOtherMemberName()}</h1>
+          
+          {otherMember && (
+            <div 
+              className="flex items-center space-x-3 cursor-pointer"
+              onClick={() => navigate(`/profile/${otherMember.user_id}`)}
+            >
+              <Avatar className="w-10 h-10">
+                <AvatarImage src={otherMember.profiles.profile_picture || ''} />
+                <AvatarFallback>
+                  <User className="w-5 h-5" />
+                </AvatarFallback>
+              </Avatar>
+              
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h1 className="text-lg font-semibold text-foreground">
+                    {otherMember.profiles.display_name}
+                  </h1>
+                  
+                  {otherMember.profiles.has_legendary_badge && (
+                    <Badge 
+                      className="text-black"
+                      style={{ backgroundColor: otherMember.profiles.legendary_badge_color || 'gold' }}
+                    >
+                      <Crown className="w-3 h-3" />
+                    </Badge>
+                  )}
+                  
+                  {otherMember.profiles.has_ultra_badge && (
+                    <Badge className="bg-red-500 text-white animate-pulse">
+                      <Zap className="w-3 h-3" />
+                    </Badge>
+                  )}
+                  
+                  {renderVerificationBadge(otherMember)}
+                </div>
+                
+                <p className="text-sm text-muted-foreground">
+                  #{otherMember.profiles.user_number}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowTipModal(true)}
-        >
-          <DollarSign className="w-4 h-4" />
-        </Button>
+        
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={togglePinChat}
+          >
+            {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowTipModal(true)}
+          >
+            <DollarSign className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto pb-20">
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto" style={{ paddingBottom: '100px' }}>
         {messages.map((message) => (
           <div
             key={message.id}
             className={`flex ${message.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
           >
             <Card className={`max-w-xs ${
-              message.sender_id === user?.id ? 'bg-blue-500 text-white' : 'bg-white'
+              message.sender_id === user?.id ? 'bg-primary text-primary-foreground' : 'bg-card'
             }`}>
               <CardContent className="p-3">
+                {message.message_type === 'image' && message.file_url && (
+                  <div className="mb-2">
+                    <img 
+                      src={message.file_url} 
+                      alt={message.content}
+                      className="max-w-full h-auto rounded"
+                    />
+                  </div>
+                )}
+                
+                {message.message_type === 'file' && message.file_url && (
+                  <div className="mb-2 p-2 bg-muted rounded flex items-center space-x-2">
+                    <Paperclip className="w-4 h-4" />
+                    <a 
+                      href={message.file_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm underline"
+                    >
+                      {message.content}
+                    </a>
+                  </div>
+                )}
+                
                 <p className="text-sm">{message.content}</p>
                 <p className={`text-xs mt-1 ${
-                  message.sender_id === user?.id ? 'text-blue-100' : 'text-gray-500'
+                  message.sender_id === user?.id ? 'text-primary-foreground/70' : 'text-muted-foreground'
                 }`}>
                   {new Date(message.created_at).toLocaleTimeString()}
                 </p>
@@ -329,9 +497,30 @@ const ChatDetailPage = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input */}
-      <div className="bg-white p-4 border-t border-gray-200 fixed bottom-0 left-0 right-0">
+      {/* Message Input - Fixed positioning */}
+      <div className="bg-card p-4 border-t border-border fixed bottom-0 left-0 right-0 z-50">
         <div className="flex space-x-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileSelect}
+            className="hidden"
+            accept="image/*,video/*,.pdf,.doc,.docx"
+          />
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <div className="w-4 h-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Paperclip className="w-4 h-4" />
+            )}
+          </Button>
+          
           <Input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
@@ -339,7 +528,8 @@ const ChatDetailPage = () => {
             onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
             className="flex-1"
           />
-          <Button onClick={sendMessage}>
+          
+          <Button onClick={sendMessage} disabled={!newMessage.trim()}>
             <Send className="w-4 h-4" />
           </Button>
         </div>
@@ -351,7 +541,7 @@ const ChatDetailPage = () => {
           <Card className="w-80 mx-4">
             <CardContent className="p-6">
               <h3 className="text-lg font-bold mb-4">Send Tip</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="text-sm text-muted-foreground mb-4">
                 Your balance: {profile?.coin_balance || 0} coins
               </p>
               <Input
