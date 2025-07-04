@@ -63,24 +63,26 @@ const CallsPage = () => {
     if (!user) return;
 
     try {
-      // Get contacts from chat members (people user has chatted with)
+      // Get unique chat members with their profiles
       const { data: chatMembers, error } = await supabase
         .from('chat_members')
         .select(`
-          user_id,
-          profiles:user_id(id, display_name, user_number, is_online)
+          chat_id,
+          profiles!inner(id, display_name, user_number, is_online, profile_picture)
         `)
         .neq('user_id', user.id);
 
       if (error) throw error;
 
-      // Remove duplicates and flatten
+      // Remove duplicates based on user id
       const uniqueContacts = chatMembers
-        ?.filter((member, index, self) => 
-          self.findIndex(m => m.profiles?.id === member.profiles?.id) === index
-        )
-        .map(member => member.profiles)
-        .filter(Boolean) || [];
+        ?.reduce((acc: any[], member) => {
+          const existingContact = acc.find(c => c.id === member.profiles.id);
+          if (!existingContact) {
+            acc.push(member.profiles);
+          }
+          return acc;
+        }, []) || [];
 
       setContacts(uniqueContacts as Contact[]);
     } catch (error) {
@@ -131,20 +133,36 @@ const CallsPage = () => {
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) return;
 
+    // Check if contact is online
+    if (!contact.is_online) {
+      toast({
+        title: "User Offline",
+        description: `${contact.display_name} is currently offline`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setActiveCall(`${type}-${contactId}-${Date.now()}`);
       setCallStartTime(new Date());
       setCallDuration(0);
 
       toast({
-        title: "Call Started",
+        title: "Calling",
         description: `Calling ${contact.display_name}...`,
       });
 
-      // Simulate call ending after some time for demo
+      // Auto-end call after 1.2 minutes (72 seconds) if no answer
       setTimeout(() => {
-        endCall('answered');
-      }, 30000); // 30 seconds for demo
+        if (activeCall) {
+          endCall('missed');
+          toast({
+            title: "Call Ended",
+            description: "No answer - call timed out",
+          });
+        }
+      }, 72000);
 
     } catch (error) {
       console.error('Error starting call:', error);

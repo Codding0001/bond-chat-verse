@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, Pin, PinOff, Image as ImageIcon } from 'lucide-react';
+import VoiceRecorder from '@/components/VoiceRecorder';
 
 interface Message {
   id: string;
@@ -222,6 +223,46 @@ const ChatDetailPage = () => {
       return null;
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleVoiceMessage = async (audioBlob: Blob) => {
+    if (!user || !chatId) return;
+
+    try {
+      const fileName = `${user.id}/${Date.now()}.webm`;
+      
+      const { data, error } = await supabase.storage
+        .from('chat-files')
+        .upload(fileName, audioBlob);
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('chat-files')
+        .getPublicUrl(fileName);
+
+      await supabase
+        .from('messages')
+        .insert({
+          content: 'Voice message',
+          sender_id: user.id,
+          chat_id: chatId,
+          message_type: 'voice',
+          file_url: publicUrl
+        });
+
+      toast({
+        title: "Voice message sent",
+        description: "Your voice message has been sent",
+      });
+    } catch (error) {
+      console.error('Error sending voice message:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send voice message",
+        variant: "destructive",
+      });
     }
   };
 
@@ -484,6 +525,15 @@ const ChatDetailPage = () => {
                   </div>
                 )}
                 
+                {message.message_type === 'voice' && message.file_url && (
+                  <div className="mb-2">
+                    <audio controls className="max-w-full">
+                      <source src={message.file_url} type="audio/webm" />
+                      Your browser does not support the audio element.
+                    </audio>
+                  </div>
+                )}
+                
                 <p className="text-sm">{message.content}</p>
                 <p className={`text-xs mt-1 ${
                   message.sender_id === user?.id ? 'text-primary-foreground/70' : 'text-muted-foreground'
@@ -520,6 +570,8 @@ const ChatDetailPage = () => {
               <Paperclip className="w-4 h-4" />
             )}
           </Button>
+          
+          <VoiceRecorder onSendVoiceMessage={handleVoiceMessage} disabled={uploading} />
           
           <Input
             value={newMessage}
