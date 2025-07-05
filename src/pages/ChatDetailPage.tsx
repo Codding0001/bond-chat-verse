@@ -547,9 +547,9 @@ const ChatDetailPage = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input - Fixed positioning */}
-      <div className="bg-card p-4 border-t border-border fixed bottom-0 left-0 right-0 z-50">
-        <div className="flex space-x-2">
+      {/* Message Input - Enhanced visibility */}
+      <div className="bg-background border-t border-border fixed bottom-0 left-0 right-0 z-[100] p-4 shadow-lg">
+        <div className="flex items-center space-x-3 max-w-full">
           <input
             ref={fileInputRef}
             type="file"
@@ -560,9 +560,10 @@ const ChatDetailPage = () => {
           
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
+            className="flex-shrink-0"
           >
             {uploading ? (
               <div className="w-4 h-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -571,19 +572,26 @@ const ChatDetailPage = () => {
             )}
           </Button>
           
-          <VoiceRecorder onSendVoiceMessage={handleVoiceMessage} disabled={uploading} />
-          
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
-            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-            className="flex-1"
-          />
-          
-          <Button onClick={sendMessage} disabled={!newMessage.trim()}>
-            <Send className="w-4 h-4" />
-          </Button>
+          <div className="flex-1 flex items-center space-x-2 bg-muted rounded-full px-4 py-2">
+            <Input
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type a message..."
+              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+            />
+            
+            <VoiceRecorder onSendVoiceMessage={handleVoiceMessage} disabled={uploading} />
+            
+            <Button 
+              onClick={sendMessage} 
+              disabled={!newMessage.trim()}
+              size="icon"
+              className="rounded-full flex-shrink-0"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
