@@ -12,6 +12,7 @@ interface Contact {
   display_name: string;
   user_number: string;
   is_online: boolean;
+  profile_picture?: string;
 }
 
 interface SimpleCallLog {
@@ -133,35 +134,19 @@ const CallsPage = () => {
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) return;
 
-    // Check if contact is online
-    if (!contact.is_online) {
-      toast({
-        title: "User Offline",
-        description: `${contact.display_name} is currently offline`,
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
       setActiveCall(`${type}-${contactId}-${Date.now()}`);
       setCallStartTime(new Date());
       setCallDuration(0);
 
       toast({
-        title: "Calling",
-        description: `Calling ${contact.display_name}...`,
+        title: "Call Started",
+        description: `${contact.is_online ? 'Ringing' : 'Calling'} ${contact.display_name}...`,
       });
 
-      // Auto-end call after 1.2 minutes (72 seconds) if no answer
+      // Auto end call after 72 seconds (1.2 minutes) if no answer
       setTimeout(() => {
-        if (activeCall) {
-          endCall('missed');
-          toast({
-            title: "Call Ended",
-            description: "No answer - call timed out",
-          });
-        }
+        endCall(contact.is_online ? 'missed' : 'missed');
       }, 72000);
 
     } catch (error) {
@@ -239,11 +224,19 @@ const CallsPage = () => {
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center text-white">
         <div className="text-center mb-8">
           <div className="w-32 h-32 bg-gray-700 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <span className="text-4xl">👤</span>
+            {contact?.profile_picture ? (
+              <img 
+                src={contact.profile_picture} 
+                alt="Profile" 
+                className="w-full h-full object-cover rounded-full"
+              />
+            ) : (
+              <span className="text-4xl">👤</span>
+            )}
           </div>
           <h2 className="text-2xl font-bold">{contact?.display_name || 'Unknown User'}</h2>
           <p className="text-gray-400">
-            {callStartTime ? formatDuration(callDuration) : 'Calling...'}
+            {callStartTime ? formatDuration(callDuration) : (contact?.is_online ? 'Ringing...' : 'Calling...')}
           </p>
         </div>
         
@@ -257,12 +250,28 @@ const CallsPage = () => {
           </Button>
           
           {isVideo && (
-            <Button
-              size="lg"
-              className="w-16 h-16 rounded-full bg-gray-600 hover:bg-gray-700"
-            >
-              <VideoOff className="w-6 h-6" />
-            </Button>
+            <>
+              <Button
+                size="lg"
+                className="w-16 h-16 rounded-full bg-gray-600 hover:bg-gray-700"
+                onClick={() => {
+                  // Toggle camera flip - would need actual implementation
+                  toast({ title: "Camera flipped" });
+                }}
+              >
+                <VideoOff className="w-6 h-6" />
+              </Button>
+              <Button
+                size="lg"
+                className="w-16 h-16 rounded-full bg-gray-600 hover:bg-gray-700"
+                onClick={() => {
+                  // Toggle mute - would need actual implementation
+                  toast({ title: "Microphone toggled" });
+                }}
+              >
+                <PhoneOff className="w-6 h-6" />
+              </Button>
+            </>
           )}
         </div>
       </div>

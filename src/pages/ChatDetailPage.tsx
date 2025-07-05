@@ -13,6 +13,7 @@ import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, 
 import MessageItem from '@/components/MessageItem';
 import TypingIndicator from '@/components/TypingIndicator';
 import EnhancedVoiceRecorder from '@/components/EnhancedVoiceRecorder';
+import NotificationSystem from '@/components/NotificationSystem';
 
 interface Message {
   id: string;
@@ -625,6 +626,10 @@ const ChatDetailPage = () => {
           message_type: 'tip'
         });
 
+      // Play coin sound
+      const audio = new Audio('data:audio/wav;base64,UklGRvIGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU4GAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAo=');
+      audio.play().catch(e => console.log('Could not play coin sound:', e));
+
       await updateCoins(-amount);
 
       const { data: receiverProfile, error: fetchError } = await supabase
@@ -903,6 +908,9 @@ const ChatDetailPage = () => {
           disabled={uploading}
         />
       )}
+
+      {/* Notification System */}
+      <NotificationSystem />
 
       {/* Tip Modal */}
       {showTipModal && (

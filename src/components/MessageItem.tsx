@@ -89,12 +89,17 @@ const MessageItem: React.FC<MessageItemProps> = ({
     }
   };
 
-  // Handle long press for reactions
+  // Handle long press for reactions and options
   const handleMouseDown = () => {
     const timer = setTimeout(() => {
       setShowReactions(true);
-    }, 500);
+    }, 2000); // 2 seconds as requested
     setLongPressTimer(timer);
+  };
+
+  // Handle click for options
+  const handleClick = () => {
+    setShowOptions(!showOptions);
   };
 
   const handleMouseUp = () => {
@@ -160,6 +165,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onClick={handleClick}
     >
       <div className="relative">
         <Card className={`max-w-xs ${
@@ -202,7 +208,23 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 <div className="flex-1 h-1 bg-muted rounded-full">
                   <div className="h-1 bg-primary rounded-full w-1/3"></div>
                 </div>
-                <span className="text-xs">0:30</span>
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs">0:30</span>
+                  <select 
+                    className="text-xs bg-transparent border-0"
+                    onChange={(e) => {
+                      if (audioRef.current) {
+                        audioRef.current.playbackRate = parseFloat(e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                  </select>
+                </div>
                 <audio
                   ref={audioRef}
                   src={message.file_url}

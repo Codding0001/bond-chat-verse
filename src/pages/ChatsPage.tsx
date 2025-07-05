@@ -299,9 +299,9 @@ const ChatsPage = () => {
                           <MessageCircle className="w-6 h-6 text-primary" />
                         )}
                       </div>
-                      {chat.other_member?.is_online && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background" />
-                      )}
+                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${
+                        chat.other_member?.is_online ? 'bg-green-500' : 'bg-gray-400'
+                      }`} />
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -309,6 +309,9 @@ const ChatsPage = () => {
                         <div className="flex items-center space-x-2">
                           <h3 className="font-medium text-foreground truncate">
                             {chat.name}
+                            {chat.unread_count > 0 && (
+                              <span className="text-green-500 font-medium ml-2">({chat.unread_count})</span>
+                            )}
                           </h3>
                           {chat.other_member?.has_legendary_badge && (
                             <Badge className="bg-yellow-500 text-black">
@@ -337,13 +340,7 @@ const ChatsPage = () => {
                       )}
                     </div>
                     
-                    {chat.unread_count > 0 && (
-                      <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                        <span className="text-xs text-primary-foreground font-medium">
-                          {chat.unread_count > 9 ? '9+' : chat.unread_count}
-                        </span>
-                      </div>
-                    )}
+                    {/* Remove redundant unread count bubble since it's now shown inline */}
                   </div>
                 </CardContent>
               </Card>
