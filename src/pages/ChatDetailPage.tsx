@@ -9,8 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, Pin, PinOff, Image as ImageIcon } from 'lucide-react';
-import VoiceRecorder from '@/components/VoiceRecorder';
+import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, Pin, PinOff, Mic } from 'lucide-react';
+import MessageItem from '@/components/MessageItem';
+import TypingIndicator from '@/components/TypingIndicator';
+import EnhancedVoiceRecorder from '@/components/EnhancedVoiceRecorder';
 
 interface Message {
   id: string;
@@ -19,6 +21,11 @@ interface Message {
   created_at: string;
   message_type: string;
   file_url?: string;
+  message_status?: string;
+  deleted_for_everyone?: boolean;
+  deleted_for_sender?: boolean;
+  reply_to_message_id?: string;
+  edited_at?: string;
 }
 
 interface ChatMember {
@@ -42,6 +49,8 @@ const ChatDetailPage = () => {
   const { user, profile, updateCoins } = useAuth();
   const { settings, playNotificationSound } = useSettings();
   const { toast } = useToast();
+  
+  // State management
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [chatMembers, setChatMembers] = useState<ChatMember[]>([]);
@@ -50,17 +59,26 @@ const ChatDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [typingUsers, setTypingUsers] = useState<any[]>([]);
+  const [messageReactions, setMessageReactions] = useState<{[key: string]: any[]}>({});
+  const [isTyping, setIsTyping] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Enhanced useEffect hooks
   useEffect(() => {
     if (chatId) {
       fetchMessages();
       fetchChatMembers();
+      fetchMessageReactions();
       markMessagesAsRead();
     }
   }, [chatId]);
@@ -69,10 +87,11 @@ const ChatDetailPage = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Real-time subscriptions
   useEffect(() => {
     if (!chatId) return;
 
-    const channel = supabase
+    const messageChannel = supabase
       .channel('messages')
       .on(
         'postgres_changes',
@@ -91,10 +110,55 @@ const ChatDetailPage = () => {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        () => {
+          fetchMessages(); // Refresh messages on updates
+        }
+      )
+      .subscribe();
+
+    const reactionChannel = supabase
+      .channel('reactions')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_reactions',
+        },
+        () => {
+          fetchMessageReactions();
+        }
+      )
+      .subscribe();
+
+    const typingChannel = supabase
+      .channel('typing')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'typing_indicators',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        () => {
+          fetchTypingUsers();
+        }
+      )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(messageChannel);
+      supabase.removeChannel(reactionChannel);
+      supabase.removeChannel(typingChannel);
     };
   }, [chatId, user?.id, playNotificationSound]);
 
@@ -189,6 +253,229 @@ const ChatDetailPage = () => {
       toast({
         title: "Error",
         description: "Failed to update pin status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // New handlers for WhatsApp-like features
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!user || !chatId) return;
+
+    try {
+      // Check if user already reacted with this emoji
+      const { data: existingReaction } = await supabase
+        .from('message_reactions')
+        .select('id')
+        .eq('message_id', messageId)
+        .eq('user_id', user.id)
+        .eq('emoji', emoji)
+        .single();
+
+      if (existingReaction) {
+        // Remove reaction
+        await supabase
+          .from('message_reactions')
+          .delete()
+          .eq('id', existingReaction.id);
+      } else {
+        // Add reaction
+        await supabase
+          .from('message_reactions')
+          .insert({
+            message_id: messageId,
+            user_id: user.id,
+            emoji: emoji
+          });
+      }
+      
+      // Refresh reactions
+      fetchMessageReactions();
+    } catch (error) {
+      console.error('Error handling reaction:', error);
+    }
+  };
+
+  const handleReply = (messageId: string) => {
+    const message = messages.find(m => m.id === messageId);
+    if (message) {
+      setReplyToMessage(message);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string, deleteForEveryone: boolean) => {
+    if (!user) return;
+
+    try {
+      if (deleteForEveryone) {
+        await supabase
+          .from('messages')
+          .update({ deleted_for_everyone: true })
+          .eq('id', messageId);
+      } else {
+        await supabase
+          .from('messages')
+          .update({ deleted_for_sender: true })
+          .eq('id', messageId);
+      }
+      
+      // Refresh messages
+      fetchMessages();
+      
+      toast({
+        title: "Message deleted",
+        description: deleteForEveryone ? "Message deleted for everyone" : "Message deleted for you",
+      });
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete message",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const fetchMessageReactions = async () => {
+    if (!chatId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('message_reactions')
+        .select(`
+          message_id,
+          emoji,
+          user_id,
+          profiles!inner(display_name)
+        `);
+
+      if (error) throw error;
+
+      // Group reactions by message and emoji
+      const groupedReactions: {[key: string]: any[]} = {};
+      
+      data?.forEach(reaction => {
+        const key = reaction.message_id;
+        if (!groupedReactions[key]) {
+          groupedReactions[key] = [];
+        }
+        
+        const existingEmoji = groupedReactions[key].find(r => r.emoji === reaction.emoji);
+        if (existingEmoji) {
+          existingEmoji.count++;
+          existingEmoji.users.push(reaction.profiles.display_name);
+          if (reaction.user_id === user?.id) {
+            existingEmoji.hasUserReacted = true;
+          }
+        } else {
+          groupedReactions[key].push({
+            emoji: reaction.emoji,
+            count: 1,
+            users: [reaction.profiles.display_name],
+            hasUserReacted: reaction.user_id === user?.id
+          });
+        }
+      });
+
+      setMessageReactions(groupedReactions);
+    } catch (error) {
+      console.error('Error fetching reactions:', error);
+    }
+  };
+
+  const handleTyping = () => {
+    if (!chatId || !user) return;
+
+    setIsTyping(true);
+    
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Update typing indicator
+    supabase
+      .from('typing_indicators')
+      .upsert({
+        chat_id: chatId,
+        user_id: user.id,
+        is_typing: true,
+        updated_at: new Date().toISOString()
+      });
+
+    // Clear typing after 3 seconds
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      supabase
+        .from('typing_indicators')
+        .delete()
+        .eq('chat_id', chatId)
+        .eq('user_id', user.id);
+    }, 3000);
+  };
+
+  const fetchTypingUsers = async () => {
+    if (!chatId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('typing_indicators')
+        .select(`
+          user_id,
+          profiles!inner(display_name, profile_picture)
+        `)
+        .eq('chat_id', chatId)
+        .neq('user_id', user?.id)
+        .gte('updated_at', new Date(Date.now() - 5000).toISOString());
+
+      if (error) throw error;
+      
+      setTypingUsers(data?.map(t => t.profiles) || []);
+    } catch (error) {
+      console.error('Error fetching typing users:', error);
+    }
+  };
+
+  // Enhanced send message with reply support
+  const sendMessageWithReply = async () => {
+    if (!newMessage.trim() || !chatId || !user) return;
+
+    try {
+      const messageData: any = {
+        content: newMessage,
+        sender_id: user.id,
+        chat_id: chatId,
+        message_type: 'text',
+        message_status: 'sent'
+      };
+
+      if (replyToMessage) {
+        messageData.reply_to_message_id = replyToMessage.id;
+      }
+
+      const { error } = await supabase
+        .from('messages')
+        .insert(messageData);
+
+      if (error) throw error;
+
+      setNewMessage('');
+      setReplyToMessage(null);
+      
+      // Clear typing indicator
+      if (isTyping) {
+        setIsTyping(false);
+        supabase
+          .from('typing_indicators')
+          .delete()
+          .eq('chat_id', chatId)
+          .eq('user_id', user.id);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send message",
         variant: "destructive",
       });
     }
@@ -491,63 +778,65 @@ const ChatDetailPage = () => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto" style={{ paddingBottom: '100px' }}>
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
-          >
-            <Card className={`max-w-xs ${
-              message.sender_id === user?.id ? 'bg-primary text-primary-foreground' : 'bg-card'
-            }`}>
-              <CardContent className="p-3">
-                {message.message_type === 'image' && message.file_url && (
-                  <div className="mb-2">
-                    <img 
-                      src={message.file_url} 
-                      alt={message.content}
-                      className="max-w-full h-auto rounded"
-                    />
-                  </div>
-                )}
-                
-                {message.message_type === 'file' && message.file_url && (
-                  <div className="mb-2 p-2 bg-muted rounded flex items-center space-x-2">
-                    <Paperclip className="w-4 h-4" />
-                    <a 
-                      href={message.file_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-sm underline"
-                    >
-                      {message.content}
-                    </a>
-                  </div>
-                )}
-                
-                {message.message_type === 'voice' && message.file_url && (
-                  <div className="mb-2">
-                    <audio controls className="max-w-full">
-                      <source src={message.file_url} type="audio/webm" />
-                      Your browser does not support the audio element.
-                    </audio>
-                  </div>
-                )}
-                
-                <p className="text-sm">{message.content}</p>
-                <p className={`text-xs mt-1 ${
-                  message.sender_id === user?.id ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                }`}>
-                  {new Date(message.created_at).toLocaleTimeString()}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        ))}
+      <div className="flex-1 p-4 space-y-2 overflow-y-auto" style={{ paddingBottom: '140px' }}>
+        {messages.map((message) => {
+          const senderProfile = chatMembers.find(m => m.user_id === message.sender_id)?.profiles;
+          const replyToMsg = message.reply_to_message_id 
+            ? messages.find(m => m.id === message.reply_to_message_id) 
+            : null;
+          const replyToProfile = replyToMsg 
+            ? chatMembers.find(m => m.user_id === replyToMsg.sender_id)?.profiles 
+            : null;
+
+          return (
+            <MessageItem
+              key={message.id}
+              message={message}
+              senderProfile={senderProfile}
+              replyToMessage={replyToMsg ? {
+                content: replyToMsg.content,
+                sender_name: replyToProfile?.display_name || 'Unknown'
+              } : undefined}
+              reactions={messageReactions[message.id] || []}
+              onReaction={handleReaction}
+              onReply={handleReply}
+              onDelete={handleDeleteMessage}
+              isOwnMessage={message.sender_id === user?.id}
+            />
+          );
+        })}
+        
+        {/* Typing indicator */}
+        <TypingIndicator typingUsers={typingUsers} />
+        
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input - Enhanced visibility */}
+      {/* Reply indicator */}
+      {replyToMessage && (
+        <div className="bg-muted p-3 border-t border-border flex items-center justify-between">
+          <div className="flex-1">
+            <div className="flex items-center space-x-2 mb-1">
+              <span className="text-sm font-medium">Replying to:</span>
+              <span className="text-sm text-muted-foreground">
+                {chatMembers.find(m => m.user_id === replyToMessage.sender_id)?.profiles.display_name}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground truncate">
+              {replyToMessage.content}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setReplyToMessage(null)}
+          >
+            ×
+          </Button>
+        </div>
+      )}
+
+      {/* Message Input - Enhanced with voice recorder */}
       <div className="bg-background border-t border-border fixed bottom-0 left-0 right-0 z-[100] p-4 shadow-lg">
         <div className="flex items-center space-x-3 max-w-full">
           <input
@@ -575,16 +864,27 @@ const ChatDetailPage = () => {
           <div className="flex-1 flex items-center space-x-2 bg-muted rounded-full px-4 py-2">
             <Input
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={(e) => {
+                setNewMessage(e.target.value);
+                handleTyping();
+              }}
               placeholder="Type a message..."
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              onKeyPress={(e) => e.key === 'Enter' && sendMessageWithReply()}
               className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
             />
             
-            <VoiceRecorder onSendVoiceMessage={handleVoiceMessage} disabled={uploading} />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowVoiceRecorder(true)}
+              disabled={uploading}
+              className="rounded-full p-1"
+            >
+              <Mic className="w-4 h-4" />
+            </Button>
             
             <Button 
-              onClick={sendMessage} 
+              onClick={sendMessageWithReply} 
               disabled={!newMessage.trim()}
               size="icon"
               className="rounded-full flex-shrink-0"
@@ -594,6 +894,15 @@ const ChatDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Enhanced Voice Recorder */}
+      {showVoiceRecorder && (
+        <EnhancedVoiceRecorder
+          onSendVoiceMessage={handleVoiceMessage}
+          onCancel={() => setShowVoiceRecorder(false)}
+          disabled={uploading}
+        />
+      )}
 
       {/* Tip Modal */}
       {showTipModal && (

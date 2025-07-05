@@ -246,32 +246,86 @@ export type Database = {
           },
         ]
       }
+      message_reactions: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           chat_id: string | null
           content: string | null
           created_at: string | null
+          deleted_for_everyone: boolean | null
+          deleted_for_sender: boolean | null
+          edited_at: string | null
           file_url: string | null
           id: string
+          message_status: string | null
           message_type: string | null
+          reply_to_message_id: string | null
           sender_id: string | null
         }
         Insert: {
           chat_id?: string | null
           content?: string | null
           created_at?: string | null
+          deleted_for_everyone?: boolean | null
+          deleted_for_sender?: boolean | null
+          edited_at?: string | null
           file_url?: string | null
           id?: string
+          message_status?: string | null
           message_type?: string | null
+          reply_to_message_id?: string | null
           sender_id?: string | null
         }
         Update: {
           chat_id?: string | null
           content?: string | null
           created_at?: string | null
+          deleted_for_everyone?: boolean | null
+          deleted_for_sender?: boolean | null
+          edited_at?: string | null
           file_url?: string | null
           id?: string
+          message_status?: string | null
           message_type?: string | null
+          reply_to_message_id?: string | null
           sender_id?: string | null
         }
         Relationships: [
@@ -280,6 +334,13 @@ export type Database = {
             columns: ["chat_id"]
             isOneToOne: false
             referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_message_id_fkey"
+            columns: ["reply_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
           {
@@ -387,6 +448,45 @@ export type Database = {
           {
             foreignKeyName: "transactions_to_user_id_fkey"
             columns: ["to_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      typing_indicators: {
+        Row: {
+          chat_id: string
+          id: string
+          is_typing: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          id?: string
+          is_typing?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          id?: string
+          is_typing?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "typing_indicators_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "typing_indicators_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -583,6 +683,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_typing_indicators: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       generate_user_number: {
         Args: Record<PropertyKey, never>
         Returns: string
