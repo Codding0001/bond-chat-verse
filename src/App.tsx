@@ -21,6 +21,7 @@ import BanAppealPage from '@/pages/BanAppealPage';
 import VerificationPage from '@/pages/VerificationPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
+import NotificationSystem from '@/components/NotificationSystem';
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
                 <Route path="*" element={<NotFound />} />
               </Routes>
               <BottomNavigation />
+              <NotificationSystem />
             </AuthGuard>
             <Toaster />
           </div>
