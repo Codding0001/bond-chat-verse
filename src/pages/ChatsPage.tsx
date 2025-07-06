@@ -1,73 +1,98 @@
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { useNavigate } from 'react-router-dom';
-import { useToast } from '@/hooks/use-toast';
-import { MessageCircle, Plus, Search, Users, Crown, Zap } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { Search, MessageSquare, User, Pin, Crown, Zap, CheckCircle } from 'lucide-react';
+import ContactNickname from '@/components/ContactNickname';
 
 interface Chat {
   id: string;
-  name: string;
+  name?: string;
   is_group: boolean;
   created_at: string;
-  last_message?: {
-    content: string;
-    created_at: string;
-    sender_name: string;
-  };
+  last_message?: string;
+  last_message_time?: string;
   unread_count: number;
+  is_pinned: boolean;
   other_member?: {
+    id: string;
     display_name: string;
     user_number: string;
+    profile_picture?: string;
     is_online: boolean;
-    profile_picture: string;
-    has_legendary_badge: boolean;
-    has_ultra_badge: boolean;
+    has_legendary_badge?: boolean;
+    has_ultra_badge?: boolean;
+    legendary_badge_color?: string;
+    verification_badge_type?: string;
+    verification_badge_expires_at?: string;
   };
 }
 
 const ChatsPage = () => {
-  const { user, profile } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [chats, setChats] = useState<Chat[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showNewChatModal, setShowNewChatModal] = useState(false);
-  const [newChatUser, setNewChatUser] = useState('');
-  const [users, setUsers] = useState<any[]>([]);
-  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [contactNicknames, setContactNicknames] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
     if (user) {
       fetchChats();
+      loadContactNicknames();
+      
+      // Real-time subscription for new messages
+      const messageChannel = supabase
+        .channel('chat-updates')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+          },
+          () => {
+            fetchChats(); // Refresh chats when new messages arrive
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(messageChannel);
+      };
     }
   }, [user]);
 
-  useEffect(() => {
-    if (newChatUser.length >= 3) {
-      searchUsers();
-    } else {
-      setUsers([]);
+  const loadContactNicknames = () => {
+    if (!user) return;
+    
+    const savedNicknames = localStorage.getItem(`nicknames_${user.id}`);
+    if (savedNicknames) {
+      setContactNicknames(JSON.parse(savedNicknames));
     }
-  }, [newChatUser]);
+  };
 
   const fetchChats = async () => {
     if (!user) return;
 
     try {
-      setLoading(true);
-      const { data: memberships, error: memberError } = await supabase
+      // Get chats with enhanced data including unread counts and online status
+      const { data: chatMembers, error } = await supabase
         .from('chat_members')
         .select(`
           chat_id,
           unread_count,
-          chats (
+          is_pinned,
+          last_read_at,
+          chats!inner(
             id,
             name,
             is_group,
@@ -76,169 +101,135 @@ const ChatsPage = () => {
         `)
         .eq('user_id', user.id);
 
-      if (memberError) {
-        console.error('Error fetching memberships:', memberError);
-        setChats([]);
-        return;
-      }
+      if (error) throw error;
 
-      if (memberships && memberships.length > 0) {
-        const chatsWithDetails = await Promise.all(
-          memberships.map(async (membership: any) => {
-            const chat = membership.chats;
-            
-            const { data: messages } = await supabase
-              .from('messages')
-              .select(`
-                content,
-                created_at,
-                sender_id,
-                profiles:sender_id (display_name)
-              `)
-              .eq('chat_id', chat.id)
-              .order('created_at', { ascending: false })
-              .limit(1);
+      // Get other members for each chat
+      const chatIds = chatMembers?.map(cm => cm.chat_id) || [];
+      const { data: otherMembers, error: membersError } = await supabase
+        .from('chat_members')
+        .select(`
+          chat_id,
+          profiles!inner(
+            id,
+            display_name,
+            user_number,
+            profile_picture,
+            is_online,
+            has_legendary_badge,
+            has_ultra_badge,
+            legendary_badge_color,
+            verification_badge_type,
+            verification_badge_expires_at
+          )
+        `)
+        .in('chat_id', chatIds)
+        .neq('user_id', user.id);
 
-            let otherMember = null;
-            if (!chat.is_group) {
-            const { data: otherMembers } = await supabase
-              .from('chat_members')
-              .select(`
-                user_id,
-                is_pinned,
-                profiles (
-                  display_name,
-                  user_number,
-                  is_online,
-                  profile_picture,
-                  has_legendary_badge,
-                  has_ultra_badge,
-                  legendary_badge_color,
-                  verification_badge_type,
-                  verification_badge_expires_at
-                )
-              `)
-              .eq('chat_id', chat.id)
-              .neq('user_id', user.id);
+      if (membersError) throw membersError;
 
-              if (otherMembers && otherMembers.length > 0) {
-                otherMember = otherMembers[0].profiles;
-              }
-            }
+      // Get last messages for each chat
+      const { data: lastMessages, error: messagesError } = await supabase
+        .from('messages')
+        .select(`
+          chat_id,
+          content,
+          created_at,
+          message_type,
+          sender_id
+        `)
+        .in('chat_id', chatIds)
+        .order('created_at', { ascending: false });
 
-            return {
-              id: chat.id,
-              name: chat.name || (otherMember?.display_name || 'Unknown User'),
-              is_group: chat.is_group,
-              created_at: chat.created_at,
-              last_message: messages?.[0] ? {
-                content: messages[0].content,
-                created_at: messages[0].created_at,
-                sender_name: messages[0].profiles?.display_name || 'Unknown'
-              } : undefined,
-              unread_count: membership.unread_count || 0,
-              other_member: otherMember
-            };
-          })
-        );
+      if (messagesError) throw messagesError;
 
-        setChats(chatsWithDetails);
-      } else {
-        setChats([]);
-      }
+      // Combine all data
+      const enhancedChats: Chat[] = chatMembers?.map(cm => {
+        const otherMember = otherMembers?.find(om => om.chat_id === cm.chat_id);
+        const lastMessage = lastMessages?.find(lm => lm.chat_id === cm.chat_id);
+        
+        return {
+          id: cm.chats.id,
+          name: cm.chats.name,
+          is_group: cm.chats.is_group,
+          created_at: cm.chats.created_at,
+          unread_count: cm.unread_count || 0,
+          is_pinned: cm.is_pinned || false,
+          last_message: lastMessage?.content || '',
+          last_message_time: lastMessage?.created_at || cm.chats.created_at,
+          other_member: otherMember ? {
+            id: otherMember.profiles.id,
+            display_name: otherMember.profiles.display_name,
+            user_number: otherMember.profiles.user_number,
+            profile_picture: otherMember.profiles.profile_picture,
+            is_online: otherMember.profiles.is_online,
+            has_legendary_badge: otherMember.profiles.has_legendary_badge,
+            has_ultra_badge: otherMember.profiles.has_ultra_badge,
+            legendary_badge_color: otherMember.profiles.legendary_badge_color,
+            verification_badge_type: otherMember.profiles.verification_badge_type,
+            verification_badge_expires_at: otherMember.profiles.verification_badge_expires_at,
+          } : undefined
+        };
+      }) || [];
+
+      // Sort: pinned first, then by last message time
+      enhancedChats.sort((a, b) => {
+        if (a.is_pinned && !b.is_pinned) return -1;
+        if (!a.is_pinned && b.is_pinned) return 1;
+        return new Date(b.last_message_time!).getTime() - new Date(a.last_message_time!).getTime();
+      });
+
+      setChats(enhancedChats);
     } catch (error) {
       console.error('Error fetching chats:', error);
-      setChats([]);
+      toast({
+        title: "Error",
+        description: "Failed to load chats",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const searchUsers = async () => {
-    if (!newChatUser || newChatUser.length < 3) return;
+  const getDisplayName = (chat: Chat) => {
+    if (!chat.other_member) return chat.name || 'Unknown';
+    const nickname = contactNicknames[chat.other_member.id];
+    return nickname || chat.other_member.display_name;
+  };
+
+  const handleNicknameChange = (contactId: string, nickname: string) => {
+    const updatedNicknames = { ...contactNicknames };
+    if (nickname) {
+      updatedNicknames[contactId] = nickname;
+    } else {
+      delete updatedNicknames[contactId];
+    }
+    setContactNicknames(updatedNicknames);
     
-    setSearchingUsers(true);
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, display_name, user_number, is_online, profile_picture, has_legendary_badge, has_ultra_badge')
-        .neq('id', user?.id)
-        .or(`display_name.ilike.%${newChatUser}%,user_number.ilike.%${newChatUser}%`)
-        .limit(10);
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (error) {
-      console.error('Error searching users:', error);
-      setUsers([]);
-    } finally {
-      setSearchingUsers(false);
+    if (user) {
+      localStorage.setItem(`nicknames_${user.id}`, JSON.stringify(updatedNicknames));
     }
   };
 
-  const createDirectChat = async (otherUserId: string) => {
-    if (!user) return;
+  const renderVerificationBadge = (member: any) => {
+    if (!member.verification_badge_type) return null;
+    
+    const isExpired = member.verification_badge_expires_at && 
+      new Date(member.verification_badge_expires_at) < new Date();
+    
+    if (isExpired) return null;
 
-    try {
-      const { data: existingMemberships } = await supabase
-        .from('chat_members')
-        .select('chat_id')
-        .eq('user_id', user.id);
-
-      if (existingMemberships) {
-        for (const membership of existingMemberships) {
-          const { data: otherMemberships } = await supabase
-            .from('chat_members')
-            .select('user_id')
-            .eq('chat_id', membership.chat_id)
-            .eq('user_id', otherUserId);
-
-          if (otherMemberships && otherMemberships.length > 0) {
-            navigate(`/chats/${membership.chat_id}`);
-            setShowNewChatModal(false);
-            return;
-          }
-        }
-      }
-
-      const { data: newChat, error: chatError } = await supabase
-        .from('chats')
-        .insert({
-          is_group: false,
-          created_by: user.id
-        })
-        .select()
-        .single();
-
-      if (chatError) throw chatError;
-
-      const { error: memberError } = await supabase
-        .from('chat_members')
-        .insert([
-          { chat_id: newChat.id, user_id: user.id },
-          { chat_id: newChat.id, user_id: otherUserId }
-        ]);
-
-      if (memberError) throw memberError;
-
-      navigate(`/chats/${newChat.id}`);
-      setShowNewChatModal(false);
-      setNewChatUser('');
-      setUsers([]);
-      
-    } catch (error) {
-      console.error('Error creating chat:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create chat. Please try again.",
-        variant: "destructive",
-      });
-    }
+    return (
+      <Badge variant="secondary" className="bg-blue-500 text-white">
+        <CheckCircle className="w-3 h-3" />
+      </Badge>
+    );
   };
 
-  const filteredChats = chats.filter(chat =>
-    chat.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredChats = chats.filter(chat => {
+    const displayName = getDisplayName(chat);
+    return displayName.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   if (loading) {
     return (
@@ -251,196 +242,128 @@ const ChatsPage = () => {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <div className="bg-card p-4 border-b border-border flex items-center justify-between">
-        <h1 className="text-xl font-bold text-foreground">Chats</h1>
-        <Button
-          onClick={() => setShowNewChatModal(true)}
-          size="sm"
-          className="bg-primary hover:bg-primary/90"
-        >
-          <Plus className="w-4 h-4" />
-        </Button>
-      </div>
-
-      <div className="p-4">
+      <div className="bg-card p-4 border-b border-border">
+        <h1 className="text-xl font-bold text-foreground mb-4">Chats</h1>
+        
         {/* Search */}
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search chats..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
           />
         </div>
-
-        {/* Chats List */}
-        <div className="space-y-2">
-          {filteredChats.length > 0 ? (
-            filteredChats.map((chat) => (
-              <Card
-                key={chat.id}
-                className="cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => navigate(`/chats/${chat.id}`)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="relative">
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                        {chat.is_group ? (
-                          <Users className="w-6 h-6 text-primary" />
-                        ) : chat.other_member?.profile_picture ? (
-                          <img 
-                            src={chat.other_member.profile_picture} 
-                            alt="Profile" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <MessageCircle className="w-6 h-6 text-primary" />
-                        )}
-                      </div>
-                      <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${
-                        chat.other_member?.is_online ? 'bg-green-500' : 'bg-gray-400'
-                      }`} />
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <h3 className="font-medium text-foreground truncate">
-                            {chat.name}
-                            {chat.unread_count > 0 && (
-                              <span className="text-green-500 font-medium ml-2">({chat.unread_count})</span>
-                            )}
-                          </h3>
-                          {chat.other_member?.has_legendary_badge && (
-                            <Badge className="bg-yellow-500 text-black">
-                              <Crown className="w-3 h-3" />
-                            </Badge>
-                          )}
-                          {chat.other_member?.has_ultra_badge && (
-                            <Badge className="bg-red-500 text-white animate-pulse">
-                              <Zap className="w-3 h-3" />
-                            </Badge>
-                          )}
-                        </div>
-                        {chat.last_message && (
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(chat.last_message.created_at).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                      
-                      {chat.last_message ? (
-                        <p className="text-sm text-muted-foreground truncate">
-                          {chat.last_message.sender_name}: {chat.last_message.content}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No messages yet</p>
-                      )}
-                    </div>
-                    
-                    {/* Remove redundant unread count bubble since it's now shown inline */}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <div className="text-center py-8">
-              <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-foreground">No chats found</p>
-              <p className="text-sm text-muted-foreground">Start a new conversation!</p>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* New Chat Modal */}
-      {showNewChatModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-80 mx-4 max-h-96 overflow-hidden">
-            <CardHeader>
-              <CardTitle>Start New Chat</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Input
-                placeholder="Search by name or user number (min 3 chars)..."
-                value={newChatUser}
-                onChange={(e) => setNewChatUser(e.target.value)}
-              />
-              
-              {searchingUsers && (
-                <div className="text-center py-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mx-auto"></div>
-                </div>
-              )}
-              
-              <div className="max-h-48 overflow-y-auto space-y-2">
-                {users.map((user) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center justify-between p-2 hover:bg-muted rounded cursor-pointer"
-                    onClick={() => createDirectChat(user.id)}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-muted flex items-center justify-center">
-                        {user.profile_picture ? (
-                          <img 
-                            src={user.profile_picture} 
-                            alt="Profile" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-xs">{user.display_name[0]}</span>
-                        )}
+      {/* Chat List */}
+      <div className="p-4 space-y-2">
+        {filteredChats.length > 0 ? (
+          filteredChats.map((chat) => (
+            <Card 
+              key={chat.id} 
+              className="cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => navigate(`/chats/${chat.id}`)}
+            >
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="relative">
+                    <Avatar className="w-12 h-12">
+                      <AvatarImage src={chat.other_member?.profile_picture || ''} />
+                      <AvatarFallback>
+                        <User className="w-6 h-6" />
+                      </AvatarFallback>
+                    </Avatar>
+                    
+                    {/* Enhanced online status indicator */}
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${
+                      chat.other_member?.is_online ? 'bg-green-500' : 'bg-gray-400'
+                    }`} />
+                    
+                    {/* Pin indicator */}
+                    {chat.is_pinned && (
+                      <div className="absolute -top-1 -left-1 bg-primary rounded-full p-1">
+                        <Pin className="w-3 h-3 text-primary-foreground" />
                       </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <p className="font-medium">{user.display_name}</p>
-                          {user.has_legendary_badge && (
-                            <Badge className="bg-yellow-500 text-black">
-                              <Crown className="w-3 h-3" />
-                            </Badge>
-                          )}
-                          {user.has_ultra_badge && (
-                            <Badge className="bg-red-500 text-white animate-pulse">
-                              <Zap className="w-3 h-3" />
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">#{user.user_number}</p>
-                      </div>
-                    </div>
-                    {user.is_online && (
-                      <div className="w-3 h-3 bg-green-500 rounded-full" />
                     )}
                   </div>
-                ))}
-                {newChatUser.length >= 3 && users.length === 0 && !searchingUsers && (
-                  <p className="text-center text-muted-foreground py-4">No users found</p>
-                )}
-                {newChatUser.length < 3 && (
-                  <p className="text-center text-muted-foreground py-4">Type at least 3 characters to search</p>
-                )}
-              </div>
-              
-              <div className="flex space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowNewChatModal(false);
-                    setNewChatUser('');
-                    setUsers([]);
-                  }}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center space-x-2">
+                        <h3 className="font-semibold text-foreground truncate">
+                          {getDisplayName(chat)}
+                          {chat.unread_count > 0 && (
+                            <span className="ml-2 text-green-600 font-bold">
+                              ({chat.unread_count})
+                            </span>
+                          )}
+                        </h3>
+                        
+                        {/* Badges */}
+                        {chat.other_member?.has_legendary_badge && (
+                          <Badge 
+                            className="text-black"
+                            style={{ backgroundColor: chat.other_member.legendary_badge_color || 'gold' }}
+                          >
+                            <Crown className="w-3 h-3" />
+                          </Badge>
+                        )}
+                        
+                        {chat.other_member?.has_ultra_badge && (
+                          <Badge className="bg-red-500 text-white animate-pulse">
+                            <Zap className="w-3 h-3" />
+                          </Badge>
+                        )}
+                        
+                        {chat.other_member && renderVerificationBadge(chat.other_member)}
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(chat.last_message_time!).toLocaleTimeString([], { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </span>
+                        
+                        {chat.unread_count > 0 && (
+                          <Badge className="bg-green-600 text-white min-w-5 h-5 flex items-center justify-center">
+                            {chat.unread_count > 99 ? '99+' : chat.unread_count}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground truncate flex-1">
+                        {chat.last_message || 'No messages yet'}
+                      </p>
+                      
+                      {chat.other_member && (
+                        <ContactNickname
+                          contactId={chat.other_member.id}
+                          contactName={chat.other_member.display_name}
+                          onNicknameChange={(nickname) => handleNicknameChange(chat.other_member!.id, nickname)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="text-center py-12">
+            <MessageSquare className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">No chats found</h3>
+            <p className="text-muted-foreground">
+              {searchQuery ? 'Try a different search term' : 'Start a conversation to see your chats here'}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

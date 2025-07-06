@@ -9,11 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, Pin, PinOff, Mic } from 'lucide-react';
+import { ArrowLeft, Send, DollarSign, Paperclip, Crown, Zap, CheckCircle, User, Pin, PinOff, Mic, Phone, Video } from 'lucide-react';
 import MessageItem from '@/components/MessageItem';
 import TypingIndicator from '@/components/TypingIndicator';
 import EnhancedVoiceRecorder from '@/components/EnhancedVoiceRecorder';
-import NotificationSystem from '@/components/NotificationSystem';
+import ContactNickname from '@/components/ContactNickname';
 
 interface Message {
   id: string;
@@ -51,7 +51,6 @@ const ChatDetailPage = () => {
   const { settings, playNotificationSound } = useSettings();
   const { toast } = useToast();
   
-  // State management
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [chatMembers, setChatMembers] = useState<ChatMember[]>([]);
@@ -65,6 +64,9 @@ const ChatDetailPage = () => {
   const [typingUsers, setTypingUsers] = useState<any[]>([]);
   const [messageReactions, setMessageReactions] = useState<{[key: string]: any[]}>({});
   const [isTyping, setIsTyping] = useState(false);
+  const [contactNicknames, setContactNicknames] = useState<{[key: string]: string}>({});
+  const [swipeStartX, setSwipeStartX] = useState<number>(0);
+  const [swipeStartY, setSwipeStartY] = useState<number>(0);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +76,6 @@ const ChatDetailPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Enhanced useEffect hooks
   useEffect(() => {
     if (chatId) {
       fetchMessages();
@@ -88,7 +89,6 @@ const ChatDetailPage = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Real-time subscriptions
   useEffect(() => {
     if (!chatId) return;
 
@@ -163,6 +163,15 @@ const ChatDetailPage = () => {
     };
   }, [chatId, user?.id, playNotificationSound]);
 
+  useEffect(() => {
+    if (user) {
+      const savedNicknames = localStorage.getItem(`nicknames_${user.id}`);
+      if (savedNicknames) {
+        setContactNicknames(JSON.parse(savedNicknames));
+      }
+    }
+  }, [user]);
+
   const fetchMessages = async () => {
     if (!chatId) return;
 
@@ -207,7 +216,6 @@ const ChatDetailPage = () => {
       if (error) throw error;
       setChatMembers(data || []);
       
-      // Check if current user has pinned this chat
       const currentUserMember = data?.find(m => m.user_id === user?.id);
       setIsPinned(currentUserMember?.is_pinned || false);
     } catch (error) {
@@ -259,12 +267,10 @@ const ChatDetailPage = () => {
     }
   };
 
-  // New handlers for WhatsApp-like features
   const handleReaction = async (messageId: string, emoji: string) => {
     if (!user || !chatId) return;
 
     try {
-      // Check if user already reacted with this emoji
       const { data: existingReaction } = await supabase
         .from('message_reactions')
         .select('id')
@@ -274,13 +280,11 @@ const ChatDetailPage = () => {
         .single();
 
       if (existingReaction) {
-        // Remove reaction
         await supabase
           .from('message_reactions')
           .delete()
           .eq('id', existingReaction.id);
       } else {
-        // Add reaction
         await supabase
           .from('message_reactions')
           .insert({
@@ -290,7 +294,6 @@ const ChatDetailPage = () => {
           });
       }
       
-      // Refresh reactions
       fetchMessageReactions();
     } catch (error) {
       console.error('Error handling reaction:', error);
@@ -320,7 +323,6 @@ const ChatDetailPage = () => {
           .eq('id', messageId);
       }
       
-      // Refresh messages
       fetchMessages();
       
       toast({
@@ -352,7 +354,6 @@ const ChatDetailPage = () => {
 
       if (error) throw error;
 
-      // Group reactions by message and emoji
       const groupedReactions: {[key: string]: any[]} = {};
       
       data?.forEach(reaction => {
@@ -389,12 +390,10 @@ const ChatDetailPage = () => {
 
     setIsTyping(true);
     
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Update typing indicator
     supabase
       .from('typing_indicators')
       .upsert({
@@ -404,7 +403,6 @@ const ChatDetailPage = () => {
         updated_at: new Date().toISOString()
       });
 
-    // Clear typing after 3 seconds
     typingTimeoutRef.current = setTimeout(() => {
       setIsTyping(false);
       supabase
@@ -437,7 +435,6 @@ const ChatDetailPage = () => {
     }
   };
 
-  // Enhanced send message with reply support
   const sendMessageWithReply = async () => {
     if (!newMessage.trim() || !chatId || !user) return;
 
@@ -463,7 +460,6 @@ const ChatDetailPage = () => {
       setNewMessage('');
       setReplyToMessage(null);
       
-      // Clear typing indicator
       if (isTyping) {
         setIsTyping(false);
         supabase
@@ -600,7 +596,7 @@ const ChatDetailPage = () => {
     }
   };
 
-  const sendTip = async () => {
+  const sendTipWithSound = async () => {
     const amount = parseInt(tipAmount);
     if (!amount || amount <= 0 || !chatId || !user || !profile) return;
 
@@ -626,9 +622,8 @@ const ChatDetailPage = () => {
           message_type: 'tip'
         });
 
-      // Play coin sound
-      const audio = new Audio('data:audio/wav;base64,UklGRvIGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU4GAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAo=');
-      audio.play().catch(e => console.log('Could not play coin sound:', e));
+      const coinAudio = new Audio('data:audio/wav;base64,UklGRvIGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU4GAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmceBjiS2PzMeCwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmeeBjiS2PzMeCwFJHfH8N2QQAo=');
+      coinAudio.play().catch(e => console.log('Could not play coin sound:', e));
 
       await updateCoins(-amount);
 
@@ -642,12 +637,10 @@ const ChatDetailPage = () => {
 
       const newBalance = (receiverProfile.coin_balance || 0) + amount;
       
-      const { error: updateError } = await supabase
+      await supabase
         .from('profiles')
         .update({ coin_balance: newBalance })
         .eq('id', otherMember.user_id);
-
-      if (updateError) throw updateError;
 
       await supabase
         .from('transactions')
@@ -663,8 +656,8 @@ const ChatDetailPage = () => {
       setShowTipModal(false);
       
       toast({
-        title: "Tip sent!",
-        description: `You sent ${amount} coins to ${otherMember.profiles.display_name}`,
+        title: "Tip sent! 💰",
+        description: `You sent ${amount} coins to ${getDisplayName(otherMember)}`,
       });
     } catch (error) {
       console.error('Error sending tip:', error);
@@ -673,6 +666,49 @@ const ChatDetailPage = () => {
         description: "Failed to send tip",
         variant: "destructive",
       });
+    }
+  };
+
+  const startCall = async (type: 'voice' | 'video') => {
+    const otherMember = getOtherMember();
+    if (!otherMember || !user) return;
+
+    try {
+      const isOnline = otherMember.profiles.is_online;
+      
+      toast({
+        title: `${type === 'video' ? 'Video' : 'Voice'} Call`,
+        description: isOnline ? `Ringing ${getDisplayName(otherMember)}...` : `Calling ${getDisplayName(otherMember)}...`,
+      });
+
+      console.log(`Starting ${type} call with ${getDisplayName(otherMember)}`);
+      
+    } catch (error) {
+      console.error('Error starting call:', error);
+      toast({
+        title: "Call Failed",
+        description: "Unable to start the call",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getDisplayName = (member: ChatMember) => {
+    const nickname = contactNicknames[member.user_id];
+    return nickname || member.profiles.display_name;
+  };
+
+  const handleNicknameChange = (contactId: string, nickname: string) => {
+    const updatedNicknames = { ...contactNicknames };
+    if (nickname) {
+      updatedNicknames[contactId] = nickname;
+    } else {
+      delete updatedNicknames[contactId];
+    }
+    setContactNicknames(updatedNicknames);
+    
+    if (user) {
+      localStorage.setItem(`nicknames_${user.id}`, JSON.stringify(updatedNicknames));
     }
   };
 
@@ -708,7 +744,6 @@ const ChatDetailPage = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col" 
          style={{ backgroundColor: settings?.chat_wallpaper_color || undefined }}>
-      {/* Enhanced Header */}
       <div className="bg-card p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Button 
@@ -724,17 +759,22 @@ const ChatDetailPage = () => {
               className="flex items-center space-x-3 cursor-pointer"
               onClick={() => navigate(`/profile/${otherMember.user_id}`)}
             >
-              <Avatar className="w-10 h-10">
-                <AvatarImage src={otherMember.profiles.profile_picture || ''} />
-                <AvatarFallback>
-                  <User className="w-5 h-5" />
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar className="w-10 h-10">
+                  <AvatarImage src={otherMember.profiles.profile_picture || ''} />
+                  <AvatarFallback>
+                    <User className="w-5 h-5" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-background ${
+                  otherMember.profiles.is_online ? 'bg-green-500' : 'bg-gray-400'
+                }`} />
+              </div>
               
               <div>
                 <div className="flex items-center space-x-2">
                   <h1 className="text-lg font-semibold text-foreground">
-                    {otherMember.profiles.display_name}
+                    {getDisplayName(otherMember)}
                   </h1>
                   
                   {otherMember.profiles.has_legendary_badge && (
@@ -755,15 +795,41 @@ const ChatDetailPage = () => {
                   {renderVerificationBadge(otherMember)}
                 </div>
                 
-                <p className="text-sm text-muted-foreground">
-                  #{otherMember.profiles.user_number}
-                </p>
+                <div className="flex items-center space-x-2">
+                  <p className="text-sm text-muted-foreground">
+                    #{otherMember.profiles.user_number}
+                  </p>
+                  
+                  <ContactNickname
+                    contactId={otherMember.user_id}
+                    contactName={otherMember.profiles.display_name}
+                    onNicknameChange={(nickname) => handleNicknameChange(otherMember.user_id, nickname)}
+                  />
+                </div>
               </div>
             </div>
           )}
         </div>
         
         <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => startCall('voice')}
+            disabled={!otherMember?.profiles.is_online}
+          >
+            <Phone className="w-4 h-4" />
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => startCall('video')}
+            disabled={!otherMember?.profiles.is_online}
+          >
+            <Video className="w-4 h-4" />
+          </Button>
+          
           <Button
             variant="ghost"
             size="sm"
@@ -782,7 +848,6 @@ const ChatDetailPage = () => {
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 p-4 space-y-2 overflow-y-auto" style={{ paddingBottom: '140px' }}>
         {messages.map((message) => {
           const senderProfile = chatMembers.find(m => m.user_id === message.sender_id)?.profiles;
@@ -794,37 +859,40 @@ const ChatDetailPage = () => {
             : null;
 
           return (
-            <MessageItem
+            <div
               key={message.id}
-              message={message}
-              senderProfile={senderProfile}
-              replyToMessage={replyToMsg ? {
-                content: replyToMsg.content,
-                sender_name: replyToProfile?.display_name || 'Unknown'
-              } : undefined}
-              reactions={messageReactions[message.id] || []}
-              onReaction={handleReaction}
-              onReply={handleReply}
-              onDelete={handleDeleteMessage}
-              isOwnMessage={message.sender_id === user?.id}
-            />
+              onTouchStart={(e) => handleSwipeStart(e, message.id)}
+              onTouchEnd={(e) => handleSwipeEnd(e, message.id)}
+            >
+              <MessageItem
+                message={message}
+                senderProfile={senderProfile}
+                replyToMessage={replyToMsg ? {
+                  content: replyToMsg.content,
+                  sender_name: getDisplayName(chatMembers.find(m => m.user_id === replyToMsg.sender_id)!)
+                } : undefined}
+                reactions={messageReactions[message.id] || []}
+                onReaction={handleReaction}
+                onReply={handleReply}
+                onDelete={handleDeleteMessage}
+                isOwnMessage={message.sender_id === user?.id}
+              />
+            </div>
           );
         })}
         
-        {/* Typing indicator */}
         <TypingIndicator typingUsers={typingUsers} />
         
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Reply indicator */}
       {replyToMessage && (
         <div className="bg-muted p-3 border-t border-border flex items-center justify-between">
           <div className="flex-1">
             <div className="flex items-center space-x-2 mb-1">
               <span className="text-sm font-medium">Replying to:</span>
               <span className="text-sm text-muted-foreground">
-                {chatMembers.find(m => m.user_id === replyToMessage.sender_id)?.profiles.display_name}
+                {getDisplayName(chatMembers.find(m => m.user_id === replyToMessage.sender_id)!)}
               </span>
             </div>
             <p className="text-sm text-muted-foreground truncate">
@@ -841,7 +909,6 @@ const ChatDetailPage = () => {
         </div>
       )}
 
-      {/* Message Input - Enhanced with voice recorder */}
       <div className="bg-background border-t border-border fixed bottom-0 left-0 right-0 z-[100] p-4 shadow-lg">
         <div className="flex items-center space-x-3 max-w-full">
           <input
@@ -900,7 +967,6 @@ const ChatDetailPage = () => {
         </div>
       </div>
 
-      {/* Enhanced Voice Recorder */}
       {showVoiceRecorder && (
         <EnhancedVoiceRecorder
           onSendVoiceMessage={handleVoiceMessage}
@@ -909,15 +975,11 @@ const ChatDetailPage = () => {
         />
       )}
 
-      {/* Notification System */}
-      <NotificationSystem />
-
-      {/* Tip Modal */}
       {showTipModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-80 mx-4">
             <CardContent className="p-6">
-              <h3 className="text-lg font-bold mb-4">Send Tip</h3>
+              <h3 className="text-lg font-bold mb-4">💰 Send Tip</h3>
               <p className="text-sm text-muted-foreground mb-4">
                 Your balance: {profile?.coin_balance || 0} coins
               </p>
@@ -929,8 +991,8 @@ const ChatDetailPage = () => {
                 className="mb-4"
               />
               <div className="flex space-x-2">
-                <Button onClick={sendTip} className="flex-1">
-                  Send Tip
+                <Button onClick={sendTipWithSound} className="flex-1">
+                  💰 Send Tip
                 </Button>
                 <Button 
                   variant="outline" 

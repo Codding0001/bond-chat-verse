@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,42 +65,29 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const [showOptions, setShowOptions] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
-  const touchStartX = useRef<number>(0);
-  const touchStartY = useRef<number>(0);
+  
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playbackTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const commonEmojis = ['❤️', '😂', '😮', '😢', '😡', '👍', '👎'];
 
-  // Handle swipe for reply
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  };
+  useEffect(() => {
+    return () => {
+      if (longPressTimer) clearTimeout(longPressTimer);
+      if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+    };
+  }, []);
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const touchEndY = e.changedTouches[0].clientY;
-    const diffX = touchStartX.current - touchEndX;
-    const diffY = Math.abs(touchStartY.current - touchEndY);
-
-    // Swipe right to reply (only if horizontal swipe is significant and vertical is minimal)
-    if (diffX > 50 && diffY < 30) {
-      onReply(message.id);
-    }
-  };
-
-  // Handle long press for reactions and options
+  // Enhanced long press for reactions (2 seconds)
   const handleMouseDown = () => {
     const timer = setTimeout(() => {
       setShowReactions(true);
-    }, 2000); // 2 seconds as requested
+    }, 2000);
     setLongPressTimer(timer);
-  };
-
-  // Handle click for options
-  const handleClick = () => {
-    setShowOptions(!showOptions);
   };
 
   const handleMouseUp = () => {
@@ -109,15 +97,63 @@ const MessageItem: React.FC<MessageItemProps> = ({
     }
   };
 
+  // Enhanced voice message playback with speed control
   const handleVoicePlay = () => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
+        audioRef.current.playbackRate = playbackRate;
         audioRef.current.play();
       }
-      setIsPlaying(!isPlaying);
     }
+  };
+
+  const handleSpeedChange = (speed: number) => {
+    setPlaybackRate(speed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = speed;
+    }
+  };
+
+  // Create audio element for voice messages
+  useEffect(() => {
+    if (message.message_type === 'voice' && message.file_url && !audioRef.current) {
+      const audio = new Audio(message.file_url);
+      audioRef.current = audio;
+      
+      audio.onloadedmetadata = () => {
+        setDuration(Math.floor(audio.duration));
+      };
+      
+      audio.onplay = () => {
+        setIsPlaying(true);
+        playbackTimerRef.current = setInterval(() => {
+          setPlaybackTime(Math.floor(audio.currentTime));
+        }, 100);
+      };
+      
+      audio.onpause = () => {
+        setIsPlaying(false);
+        if (playbackTimerRef.current) {
+          clearInterval(playbackTimerRef.current);
+        }
+      };
+      
+      audio.onended = () => {
+        setIsPlaying(false);
+        setPlaybackTime(0);
+        if (playbackTimerRef.current) {
+          clearInterval(playbackTimerRef.current);
+        }
+      };
+    }
+  }, [message.file_url, message.message_type]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const renderMessageStatus = () => {
@@ -160,12 +196,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
   return (
     <div
       className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-2 relative`}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onClick={handleClick}
+      onTouchStart={handleMouseDown}
+      onTouchEnd={handleMouseUp}
     >
       <div className="relative">
         <Card className={`max-w-xs ${
@@ -184,6 +219,57 @@ const MessageItem: React.FC<MessageItemProps> = ({
               </div>
             )}
 
+            {/* Enhanced voice message with speed controls */}
+            {message.message_type === 'voice' && message.file_url && (
+              <div className="mb-2 p-3 bg-muted/20 rounded-lg">
+                <div className="flex items-center space-x-3 mb-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="rounded-full p-2 h-10 w-10"
+                    onClick={handleVoicePlay}
+                  >
+                    {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                  </Button>
+                  
+                  {/* Waveform visualization */}
+                  <div className="flex-1 h-8 flex items-center space-x-1">
+                    {Array.from({ length: 20 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-1 rounded-full transition-all duration-100 ${
+                          isPlaying 
+                            ? 'bg-primary animate-pulse' 
+                            : 'bg-muted-foreground/50'
+                        }`}
+                        style={{
+                          height: `${Math.random() * 24 + 8}px`,
+                          animationDelay: `${i * 50}ms`
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between text-xs">
+                  <span>{formatTime(playbackTime)} / {formatTime(duration)}</span>
+                  
+                  {/* Speed selector */}
+                  <select 
+                    className="bg-transparent border-0 text-xs focus:outline-none"
+                    value={playbackRate}
+                    onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                  >
+                    <option value="0.5">0.5x</option>
+                    <option value="1">1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Message content */}
             {message.message_type === 'image' && message.file_url && (
               <div className="mb-2">
@@ -191,46 +277,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   src={message.file_url} 
                   alt={message.content}
                   className="max-w-full h-auto rounded"
-                />
-              </div>
-            )}
-            
-            {message.message_type === 'voice' && message.file_url && (
-              <div className="mb-2 flex items-center space-x-2 bg-muted/20 rounded-full p-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="rounded-full p-1 h-8 w-8"
-                  onClick={handleVoicePlay}
-                >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                </Button>
-                <div className="flex-1 h-1 bg-muted rounded-full">
-                  <div className="h-1 bg-primary rounded-full w-1/3"></div>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <span className="text-xs">0:30</span>
-                  <select 
-                    className="text-xs bg-transparent border-0"
-                    onChange={(e) => {
-                      if (audioRef.current) {
-                        audioRef.current.playbackRate = parseFloat(e.target.value);
-                      }
-                    }}
-                  >
-                    <option value="0.5">0.5x</option>
-                    <option value="1" selected>1x</option>
-                    <option value="1.25">1.25x</option>
-                    <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
-                  </select>
-                </div>
-                <audio
-                  ref={audioRef}
-                  src={message.file_url}
-                  onEnded={() => setIsPlaying(false)}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
                 />
               </div>
             )}
@@ -249,7 +295,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
               </div>
             )}
             
-            {message.message_type === 'text' && (
+            {(message.message_type === 'text' || message.message_type === 'tip') && (
               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
             )}
 
@@ -276,7 +322,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   <Badge
                     key={index}
                     variant={reaction.hasUserReacted ? "default" : "secondary"}
-                    className="text-xs cursor-pointer"
+                    className="text-xs cursor-pointer hover:scale-110 transition-transform"
                     onClick={() => onReaction(message.id, reaction.emoji)}
                   >
                     {reaction.emoji} {reaction.count}
@@ -287,14 +333,17 @@ const MessageItem: React.FC<MessageItemProps> = ({
           </CardContent>
         </Card>
 
-        {/* Message options */}
+        {/* Enhanced options menu */}
         {showOptions && (
-          <div className="absolute top-0 right-0 bg-popover border rounded-md shadow-md p-1 z-10">
+          <div className="absolute top-0 right-0 bg-popover border rounded-md shadow-lg p-1 z-10 min-w-40">
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => onReply(message.id)}
-              className="w-full justify-start"
+              onClick={() => {
+                onReply(message.id);
+                setShowOptions(false);
+              }}
+              className="w-full justify-start text-sm"
             >
               <Reply className="w-4 h-4 mr-2" />
               Reply
@@ -302,8 +351,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => onDelete(message.id, false)}
-              className="w-full justify-start"
+              onClick={() => {
+                onDelete(message.id, false);
+                setShowOptions(false);
+              }}
+              className="w-full justify-start text-sm"
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete for me
@@ -312,8 +364,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => onDelete(message.id, true)}
-                className="w-full justify-start"
+                onClick={() => {
+                  onDelete(message.id, true);
+                  setShowOptions(false);
+                }}
+                className="w-full justify-start text-sm text-red-600 hover:text-red-700"
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete for everyone
@@ -322,16 +377,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
           </div>
         )}
 
-        {/* Reaction picker */}
+        {/* Enhanced reaction picker */}
         {showReactions && (
-          <div className="absolute -top-12 left-0 bg-popover border rounded-full shadow-lg p-2 z-20">
+          <div className="absolute -top-16 left-0 bg-popover border rounded-full shadow-lg p-2 z-20">
             <div className="flex space-x-1">
               {commonEmojis.map((emoji) => (
                 <Button
                   key={emoji}
                   size="sm"
                   variant="ghost"
-                  className="text-lg p-1 h-8 w-8"
+                  className="text-lg p-1 h-10 w-10 hover:scale-125 transition-transform"
                   onClick={() => {
                     onReaction(message.id, emoji);
                     setShowReactions(false);
@@ -343,6 +398,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           </div>
         )}
+
+        {/* Click to show options */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="absolute -top-2 -right-2 opacity-0 hover:opacity-100 transition-opacity"
+          onClick={() => setShowOptions(!showOptions)}
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </Button>
       </div>
     </div>
   );
